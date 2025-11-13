@@ -1,0 +1,607 @@
+@import "tailwindcss";
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* CRITICAL CENTERING FIXES */
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #F5F5F7;
+  color: #1C1C1E;
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+}
+
+/* FORCE CENTERING - Add these critical rules */
+#root, #__next {
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* Remove any default margins that might be breaking centering */
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, sub, sup, tt, var,
+b, u, i, center,
+dl, dt, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+}
+
+/* Allow Tailwind padding classes to work - override global reset */
+input, button, form, label {
+  padding: revert !important;
+}
+
+/* Override for login/signup card containers to ensure padding works */
+.login-signup-card {
+  padding: 2rem !important;
+}
+@media (min-width: 640px) {
+  .login-signup-card {
+    padding: 2.5rem !important;
+  }
+}
+@media (min-width: 1024px) {
+  .login-signup-card {
+    padding: 3rem !important;
+  }
+}
+
+/* Ensure viewport is responsive */
+html {
+  -webkit-text-size-adjust: 100%;
+  -ms-text-size-adjust: 100%;
+}
+
+/* Ensure mobile responsiveness - allow Tailwind classes to work */
+body {
+  overflow-x: hidden;
+  min-width: 0;
+}
+
+/* Ensure Tailwind's mx-auto works properly */
+.mx-auto {
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+.text-center {
+  text-align: center !important;
+}
+
+.justify-center {
+  justify-content: center !important;
+}
+
+.items-center {
+  align-items: center !important;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-weight: 300;
+  letter-spacing: -0.03em;
+}
+
+/* Smooth transitions - Apple style */
+a, button, input, select, textarea {
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+/* Better performance for transforms */
+button, a, img {
+  backface-visibility: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #F5F5F7;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #D1D1D6;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #AEAEB2;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeInUp {
+  animation: fadeInUp 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  opacity: 0;
+}
+
+/* Apple-style smooth scale animation */
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-scaleIn {
+  animation: scaleIn 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* Smooth hover lift effect */
+.hover-lift {
+  transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1), 
+              box-shadow 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hover-lift:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+}
+
+/* Hero text container - all text fades up together on load */
+.hero-text-container {
+  animation: fadeInUp 0.8s ease-out forwards;
+  opacity: 0;
+}
+
+/* Override global reset for hero text spacing */
+.hero-text-container h1 {
+  margin-bottom: 15px !important;
+  margin-top: 0 !important;
+}
+
+.hero-text-container > p:first-of-type {
+  margin-bottom: 24px !important;
+  margin-top: 0 !important;
+}
+
+.hero-text-container > p:last-of-type {
+  margin-bottom: 10px !important;
+  margin-top: 0 !important;
+}
+
+.animation-delay-200 {
+  animation-delay: 0.2s;
+}
+
+.animation-delay-400 {
+  animation-delay: 0.4s;
+}
+
+.animation-delay-600 {
+  animation-delay: 0.6s;
+}
+
+/* Hide scrollbar for horizontal carousels */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Smooth horizontal scrolling for mobile listings */
+.listing-section > div:first-child {
+  scroll-snap-type: x mandatory;
+}
+
+.listing-section > div:first-child > div {
+  scroll-snap-align: start;
+}
+
+/* Mobile Menu Animations */
+@keyframes slideDown {
+  from {
+    max-height: 0;
+    opacity: 0;
+  }
+  to {
+    max-height: 500px;
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    max-height: 500px;
+    opacity: 1;
+  }
+  to {
+    max-height: 0;
+    opacity: 0;
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideDownFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-fadeInUp {
+  animation: fadeInUp 0.6s ease-out forwards;
+}
+
+.animate-slideDownFadeIn {
+  animation: slideDownFadeIn 0.3s ease-out forwards;
+}
+
+.animate-scaleIn {
+  animation: scaleIn 0.5s ease-out forwards;
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+.mobile-menu-item {
+  animation: fadeInUp 0.3s ease-out forwards;
+  opacity: 0;
+}
+
+/* Override global reset for search bar spacing */
+.search-nav-section {
+  padding-top: 2rem !important;
+}
+
+@media (min-width: 640px) {
+  .search-nav-section {
+    padding-top: 3rem !important;
+  }
+}
+
+/* Override global reset for hero CTA buttons */
+.hero-cta-button {
+  padding: 0.625rem 1.5rem !important;
+}
+
+@media (min-width: 640px) {
+  .hero-cta-button {
+    padding: 0.625rem 2rem !important;
+  }
+}
+
+/* Override global reset for hero button container margin */
+.hero-text-container .hero-cta-buttons {
+  margin-top: 0 !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+/* Override global reset for category filter spacing */
+.category-filters {
+  margin-bottom: 15px !important;
+}
+
+/* Override global reset for search bar spacing and padding */
+.search-bar-container {
+  margin-bottom: 10px !important;
+}
+
+.search-nav-section > div {
+  padding-bottom: 10px !important;
+}
+
+.search-where-input {
+  padding-left: 1.5rem !important;
+}
+
+/* Override global reset for listings section spacing */
+.listings-section {
+  padding-top: 25px !important;
+  padding-bottom: 40px !important;
+}
+@media (min-width: 640px) {
+  .listings-section {
+    padding-bottom: 60px !important;
+  }
+}
+@media (min-width: 1024px) {
+  .listings-section {
+    padding-bottom: 80px !important;
+  }
+}
+
+/* Footer spacing from listings - Airbnb style large spacing */
+.footer-spacing {
+  margin-top: 0 !important;
+}
+
+/* Override global reset for footer internal spacing */
+footer {
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+.footer-inner {
+  padding-top: 60px !important;
+  padding-bottom: 60px !important;
+}
+
+@media (min-width: 640px) {
+  .footer-inner {
+    padding-top: 70px !important;
+    padding-bottom: 70px !important;
+  }
+}
+
+/* Footer column spacing */
+.footer-column {
+  padding-right: 1.5rem !important;
+}
+
+.footer-column h2,
+.footer-column h3 {
+  margin-bottom: 1.25rem !important;
+}
+
+.footer-column ul {
+  margin-top: 0 !important;
+}
+
+.footer-column li {
+  margin-bottom: 0 !important;
+  padding: 0.25rem 0 !important;
+}
+
+/* Ensure category header animation works */
+.category-header.animate-fadeInUp {
+  animation: fadeInUp 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards !important;
+}
+
+/* Copyright section spacing */
+.copyright-section {
+  padding-top: 2rem !important;
+}
+
+@media (min-width: 640px) {
+  .copyright-section {
+    padding-top: 2.5rem !important;
+  }
+}
+
+/* Hide calendar picker icons on date inputs */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  display: none !important;
+  -webkit-appearance: none !important;
+  appearance: none !important;
+}
+
+input[type="date"]::-webkit-inner-spin-button,
+input[type="date"]::-webkit-outer-spin-button {
+  display: none !important;
+  -webkit-appearance: none !important;
+  appearance: none !important;
+}
+
+input[type="date"] {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+}
+
+/* Smooth animations for search bar interactions */
+.search-bar-container > div > div {
+  animation: slideDownFadeIn 0.4s ease-out;
+}
+
+/* User Dropdown Menu - Force spacing and alignment */
+.user-dropdown-menu {
+  padding: 0.875rem !important;
+}
+
+.user-dropdown-menu > * {
+  margin-bottom: 0.25rem !important;
+}
+
+.user-dropdown-menu > *:last-child {
+  margin-bottom: 0 !important;
+}
+
+.user-dropdown-item {
+  padding: 0.875rem 1rem !important;
+  gap: 1rem !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+.user-dropdown-item svg {
+  flex-shrink: 0 !important;
+  width: 1.25rem !important;
+  height: 1.25rem !important;
+}
+
+.user-dropdown-separator {
+  margin-top: 0.5rem !important;
+  margin-bottom: 0.5rem !important;
+}
+
+/* Responsive dropdown menu */
+@media (max-width: 640px) {
+  .user-dropdown-menu {
+    width: calc(100vw - 2rem) !important;
+    max-width: 20rem !important;
+    right: 0.5rem !important;
+    left: auto !important;
+  }
+}
+
+/* Profile Page - Force spacing to prevent CSS conflicts */
+.profile-container {
+  padding: 1.5rem !important;
+}
+
+@media (min-width: 640px) {
+  .profile-container {
+    padding: 2rem !important;
+  }
+}
+
+@media (min-width: 1024px) {
+  .profile-container {
+    padding: 2.5rem !important;
+  }
+}
+
+.profile-stat-card {
+  padding: 1rem !important;
+}
+
+@media (min-width: 640px) {
+  .profile-stat-card {
+    padding: 1.25rem !important;
+  }
+}
+
+.profile-stat-card h3 {
+  padding-left: 0.25rem !important;
+  margin-bottom: 0.75rem !important;
+}
+
+.profile-stat-card p {
+  padding-left: 0.25rem !important;
+}
+
+.profile-stat-icon {
+  padding: 0.375rem !important;
+}
+
+.profile-section-card {
+  padding: 1.25rem !important;
+}
+
+@media (min-width: 640px) {
+  .profile-section-card {
+    padding: 1.5rem !important;
+  }
+}
+
+@media (min-width: 1024px) {
+  .profile-section-card {
+    padding: 2rem !important;
+  }
+}
+
+/* Force spacing between statistics and history sections */
+.profile-stats-section {
+  margin-bottom: 2.5rem !important;
+}
+
+/* Slide Down Fade In Animation */
+@keyframes slideDownFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slideDownFadeIn {
+  animation: slideDownFadeIn 0.3s ease-out;
+}
+
+@media (min-width: 640px) {
+  .profile-stats-section {
+    margin-bottom: 3rem !important;
+  }
+}
+
+@media (min-width: 1024px) {
+  .profile-stats-section {
+    margin-bottom: 3.5rem !important;
+  }
+}
