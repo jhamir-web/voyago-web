@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { doc, getDoc, collection, addDoc, query, where, getDocs, updateDoc, deleteDoc, onSnapshot } from "firebase/firestore";
+import { doc, getDoc, collection, addDoc, query, where, getDocs, updateDoc, deleteDoc, onSnapshot, Timestamp } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useAuth } from "../../contexts/AuthContext";
 import { PayPalButtons, PayPalScriptProvider } from "@paypal/react-paypal-js";
@@ -31,6 +31,7 @@ const ListingDetails = () => {
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [bookedDates, setBookedDates] = useState([]);
+  const [blockedDates, setBlockedDates] = useState([]);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isFavorite, setIsFavorite] = useState(false);
   const [favoriteId, setFavoriteId] = useState(null);
@@ -45,6 +46,10 @@ const ListingDetails = () => {
   const [paymentMethod, setPaymentMethod] = useState("paypal"); // "paypal" or "wallet"
   const [walletBalance, setWalletBalance] = useState(0);
   const [walletLoading, setWalletLoading] = useState(false);
+  const [couponCode, setCouponCode] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [couponError, setCouponError] = useState("");
+  const [discountAmount, setDiscountAmount] = useState(0);
   
   // Use all uploaded images (imageUrls array if available, otherwise fall back to imageUrl)
   const listingImages = useMemo(() => {
@@ -147,6 +152,28 @@ const ListingDetails = () => {
     };
     fetchBookedDates();
   }, [id]);
+
+  // Fetch blocked dates from host's user document
+  useEffect(() => {
+    const fetchBlockedDates = async () => {
+      if (!listing?.hostId) return;
+      try {
+        const hostDoc = await getDoc(doc(db, "users", listing.hostId));
+        if (hostDoc.exists()) {
+          const hostData = hostDoc.data();
+          if (hostData.blockedDates && Array.isArray(hostData.blockedDates)) {
+            setBlockedDates(hostData.blockedDates);
+          } else {
+            setBlockedDates([]);
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching blocked dates:", error);
+        setBlockedDates([]);
+      }
+    };
+    fetchBlockedDates();
+  }, [listing?.hostId]);
 
   // Fetch favorites status
   useEffect(() => {
@@ -395,7 +422,11 @@ const ListingDetails = () => {
       // Only calculate price if check-out is after check-in (at least 1 night)
       if (nights > 0 && checkOutDate > checkInDate) {
         const pricePerNight = parseFloat(listing.price) || 0;
-        const total = pricePerNight * nights;
+        const subtotal = pricePerNight * nights;
+        
+        // Apply discount if coupon is applied
+        const discount = discountAmount || 0;
+        const total = Math.max(0, subtotal - discount);
         setTotalPrice(total);
       } else {
         setTotalPrice(0);
@@ -403,7 +434,151 @@ const ListingDetails = () => {
     } else {
       setTotalPrice(0);
     }
-  }, [checkIn, checkOut, listing]);
+  }, [checkIn, checkOut, listing, discountAmount]);
+
+  // Apply promo/coupon code
+  const handleApplyCoupon = async () => {
+    if (!couponCode.trim()) {
+      setCouponError("Please enter a promo or coupon code");
+      return;
+    }
+
+    if (!checkIn || !checkOut || !listing) {
+      setCouponError("Please select check-in and check-out dates first");
+      return;
+    }
+
+    try {
+      setCouponError("");
+      const codeToCheck = couponCode.toUpperCase().trim();
+
+      // First, check if it's the listing's promo code
+      if (listing.promoCode && listing.promoCode.toUpperCase() === codeToCheck) {
+        // Validate promo code usage limits
+        if (listing.maxUses && listing.maxUses > 0) {
+          // Check how many times this promo code has been used
+          const promoUsageQuery = query(
+            collection(db, "bookings"),
+            where("listingId", "==", id),
+            where("couponCode", "==", codeToCheck)
+          );
+          const usageSnapshot = await getDocs(promoUsageQuery);
+          
+          if (usageSnapshot.size >= listing.maxUses) {
+            setCouponError("This promo code has reached its maximum usage limit");
+            setAppliedCoupon(null);
+            setDiscountAmount(0);
+            return;
+          }
+        }
+
+        // Calculate discount using listing's promo discount
+        const checkInDate = new Date(checkIn + 'T00:00:00');
+        const checkOutDate = new Date(checkOut + 'T00:00:00');
+        const nights = Math.ceil((checkOutDate.getTime() - checkInDate.getTime()) / (1000 * 60 * 60 * 24));
+        const pricePerNight = parseFloat(listing.price) || 0;
+        const subtotal = pricePerNight * nights;
+        const discountPercent = parseFloat(listing.discount) || 0;
+        const discount = (subtotal * discountPercent) / 100;
+
+        // Create a coupon-like object for consistency
+        const promoCoupon = {
+          id: "listing-promo",
+          code: listing.promoCode,
+          title: listing.promoDescription || "Promo Code",
+          discountPercentage: discountPercent,
+          type: "promo"
+        };
+
+        setAppliedCoupon(promoCoupon);
+        setDiscountAmount(discount);
+        setCouponError("");
+        return;
+      }
+
+      // If not listing promo code, check coupons collection
+      const couponsQuery = query(
+        collection(db, "coupons"),
+        where("code", "==", codeToCheck)
+      );
+      const snapshot = await getDocs(couponsQuery);
+
+      if (snapshot.empty) {
+        setCouponError("Invalid promo or coupon code");
+        setAppliedCoupon(null);
+        setDiscountAmount(0);
+        return;
+      }
+
+      const coupon = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+
+      // Check if coupon is active
+      if (coupon.active === false) {
+        setCouponError("This coupon is no longer active");
+        setAppliedCoupon(null);
+        setDiscountAmount(0);
+        return;
+      }
+
+      // Check if coupon is for this host
+      if (coupon.hostId !== listing.hostId) {
+        setCouponError("This coupon is not valid for this listing");
+        setAppliedCoupon(null);
+        setDiscountAmount(0);
+        return;
+      }
+
+      // Check validity dates
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const startDate = coupon.startDate ? new Date(coupon.startDate) : null;
+      const endDate = coupon.endDate ? new Date(coupon.endDate) : null;
+      
+      if (startDate) startDate.setHours(0, 0, 0, 0);
+      if (endDate) endDate.setHours(23, 59, 59, 999);
+
+      if (startDate && today < startDate) {
+        setCouponError(`This coupon is not valid yet. Valid from ${startDate.toLocaleDateString()}`);
+        setAppliedCoupon(null);
+        setDiscountAmount(0);
+        return;
+      }
+
+      if (endDate && today > endDate) {
+        setCouponError("This coupon has expired");
+        setAppliedCoupon(null);
+        setDiscountAmount(0);
+        return;
+      }
+
+      // Calculate discount
+      const checkInDate = new Date(checkIn + 'T00:00:00');
+      const checkOutDate = new Date(checkOut + 'T00:00:00');
+      const nights = Math.ceil((checkOutDate.getTime() - checkInDate.getTime()) / (1000 * 60 * 60 * 24));
+      const pricePerNight = parseFloat(listing.price) || 0;
+      const subtotal = pricePerNight * nights;
+      const discountPercent = parseFloat(coupon.discountPercentage) || 0;
+      const discount = (subtotal * discountPercent) / 100;
+
+      setAppliedCoupon(coupon);
+      setDiscountAmount(discount);
+      setCouponError("");
+    } catch (error) {
+      console.error("Error applying coupon:", error);
+      setCouponError("Failed to apply promo/coupon code. Please try again.");
+      setAppliedCoupon(null);
+      setDiscountAmount(0);
+    }
+  };
+
+  // Remove coupon
+  const handleRemoveCoupon = () => {
+    setCouponCode("");
+    setAppliedCoupon(null);
+    setDiscountAmount(0);
+    setCouponError("");
+  };
 
   // Validate booking dates and check for conflicts
   const validateBooking = async () => {
@@ -459,6 +634,27 @@ const ListingDetails = () => {
 
       if (hasConflict) {
         return { valid: false, error: `❌ These dates are already booked:\n${conflictInfo}\n\nPlease select different dates.` };
+      }
+
+      // Check for blocked dates
+      const currentCheckDate = new Date(checkInDate);
+      const blockedDatesInRange = [];
+      
+      while (currentCheckDate <= checkOutDate) {
+        const year = currentCheckDate.getFullYear();
+        const month = String(currentCheckDate.getMonth() + 1).padStart(2, '0');
+        const day = String(currentCheckDate.getDate()).padStart(2, '0');
+        const dateStr = `${year}-${month}-${day}`;
+        
+        if (blockedDates.includes(dateStr)) {
+          blockedDatesInRange.push(dateStr);
+        }
+        
+        currentCheckDate.setDate(currentCheckDate.getDate() + 1);
+      }
+      
+      if (blockedDatesInRange.length > 0) {
+        return { valid: false, error: `❌ Some selected dates are blocked by the host.\n\nPlease select different dates.` };
       }
 
       return { valid: true };
@@ -553,6 +749,7 @@ const ListingDetails = () => {
     const checkOutDate = new Date(checkOut + 'T00:00:00');
 
     // Create booking with payment information
+    // Status is "pending" - host needs to approve
     const bookingData = {
       listingId: id,
       listingTitle: listing.title,
@@ -562,12 +759,17 @@ const ListingDetails = () => {
       hostEmail: listing.hostEmail,
       guestId: currentUser.uid,
       guestEmail: currentUser.email,
+      guestName: currentUser.displayName || currentUser.email?.split('@')[0] || "Guest",
       checkIn: checkInDate.toISOString(),
       checkOut: checkOutDate.toISOString(),
       guests: parseInt(guests),
       pricePerNight: listing.price,
       totalPrice: totalPrice,
-      status: "confirmed",
+      subtotal: parseFloat(listing.price) * Math.ceil((new Date(checkOut + 'T00:00:00').getTime() - new Date(checkIn + 'T00:00:00').getTime()) / (1000 * 60 * 60 * 24)),
+      discountAmount: discountAmount || 0,
+      couponCode: appliedCoupon?.code || null,
+      couponId: appliedCoupon?.id || null,
+      status: "pending", // Host needs to approve
       paymentStatus: "paid",
       paymentMethod: paymentDetails.paymentMethod || "paypal",
       paymentId: paymentDetails.transactionId,
@@ -635,6 +837,11 @@ const ListingDetails = () => {
     );
   }
 
+  // Determine listing type
+  const isPlace = listing?.category === "place" || listing?.subcategory || listing?.placeType;
+  const isExperience = listing?.category === "experience" || listing?.activityType;
+  const isService = listing?.category === "service" || listing?.serviceType;
+
   const nights = checkIn && checkOut 
     ? Math.ceil((new Date(checkOut + 'T00:00:00') - new Date(checkIn + 'T00:00:00')) / (1000 * 60 * 60 * 24))
     : 0;
@@ -677,6 +884,7 @@ const ListingDetails = () => {
     
     if (date < today) return 'past';
     if (bookedDates.includes(dateStr)) return 'booked';
+    if (blockedDates.includes(dateStr)) return 'blocked';
     if (checkIn && dateStr === checkIn) return 'checkin';
     if (checkOut && dateStr === checkOut) return 'checkout';
     return 'available';
@@ -1338,9 +1546,9 @@ const ListingDetails = () => {
                     return (
                       <button
                         key={index}
-                        disabled={!date || status === 'past' || status === 'booked'}
+                        disabled={!date || status === 'past' || status === 'booked' || status === 'blocked'}
                         onClick={() => {
-                          if (!date || status === 'past' || status === 'booked') return;
+                          if (!date || status === 'past' || status === 'booked' || status === 'blocked') return;
                           if (!checkIn || (checkIn && checkOut)) {
                             setCheckIn(dateStr);
                             setCheckOut('');
@@ -1352,7 +1560,8 @@ const ListingDetails = () => {
                           aspect-square rounded-lg text-xs sm:text-sm font-light transition-all
                           ${!date ? 'cursor-default' : ''}
                           ${status === 'past' ? 'text-gray-300 bg-gray-50 cursor-not-allowed' : ''}
-                          ${status === 'booked' ? 'text-white bg-red-100 cursor-not-allowed relative' : ''}
+                          ${status === 'booked' ? 'text-[#1C1C1E] bg-gray-200 cursor-not-allowed relative' : ''}
+                          ${status === 'blocked' ? 'text-white bg-red-100 cursor-not-allowed relative' : ''}
                           ${status === 'available' ? 'text-[#1C1C1E] bg-green-50 hover:bg-green-100 cursor-pointer' : ''}
                           ${isSelected ? 'bg-[#0071E3] text-white ring-2 ring-[#0071E3] ring-offset-2' : ''}
                           ${status === 'checkin' || status === 'checkout' ? 'bg-[#0071E3] text-white font-medium' : ''}
@@ -1361,6 +1570,9 @@ const ListingDetails = () => {
                       >
                         {date ? date.getDate() : ''}
                         {status === 'booked' && (
+                          <span className="absolute inset-0 flex items-center justify-center text-[#1C1C1E] text-xs font-medium">✓</span>
+                        )}
+                        {status === 'blocked' && (
                           <span className="absolute inset-0 flex items-center justify-center text-white text-xs">✕</span>
                         )}
                       </button>
@@ -1395,7 +1607,9 @@ const ListingDetails = () => {
               <div className="mb-6">
                 <div className="flex items-baseline gap-2 mb-2">
                   <span className="text-3xl sm:text-4xl font-light text-[#1C1C1E]">${listing.price}</span>
-                  <span className="text-base sm:text-lg text-[#1C1C1E]/60 font-light">/ night</span>
+                  <span className="text-base sm:text-lg text-[#1C1C1E]/60 font-light">
+                    {isPlace ? "/ night" : isExperience ? "/ person" : isService ? "/ service" : "/ night"}
+                  </span>
                 </div>
                 <span className="inline-block px-3 py-1 bg-[#34C759]/10 text-[#34C759] rounded-full text-xs sm:text-sm font-medium">
                   Available
@@ -1446,6 +1660,87 @@ const ListingDetails = () => {
                     </svg>
                     <span>Click to select dates</span>
                   </div>
+
+                  {/* Promo/Coupon Code Section */}
+                  <div className="border-t border-gray-200 pt-4">
+                    <label className="block text-xs sm:text-sm font-medium text-[#1C1C1E] mb-2">
+                      Promo/Coupon Code (Optional)
+                    </label>
+                    {listing.promoCode && (
+                      <p className="text-xs text-[#8E8E93] font-light mb-2">
+                        This listing has a promo code available
+                      </p>
+                    )}
+                    {!appliedCoupon ? (
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={couponCode}
+                          onChange={(e) => {
+                            setCouponCode(e.target.value.toUpperCase());
+                            setCouponError("");
+                          }}
+                          placeholder={listing.promoCode ? `Enter code (e.g., ${listing.promoCode})` : "Enter promo or coupon code"}
+                          className="flex-1 px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-[#0071E3] focus:ring-2 focus:ring-[#0071E3]/10 bg-white text-[#1C1C1E] font-light"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleApplyCoupon}
+                          disabled={!couponCode.trim() || !checkIn || !checkOut}
+                          className="px-4 py-2.5 bg-[#FF9500] text-white rounded-xl font-medium hover:bg-[#E6850E] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Apply
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between p-3 bg-green-50 border-2 border-green-200 rounded-xl">
+                        <div className="flex items-center gap-2">
+                          <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                          <div>
+                            <p className="text-sm font-medium text-green-800">{appliedCoupon.code}</p>
+                            <p className="text-xs text-green-600">
+                              {appliedCoupon.title} - {appliedCoupon.discountPercentage}% off
+                              {appliedCoupon.type === "promo" && " (Promo Code)"}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleRemoveCoupon}
+                          className="text-green-600 hover:text-green-800 transition-colors"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    )}
+                    {couponError && (
+                      <p className="text-xs text-red-600 font-light mt-1">{couponError}</p>
+                    )}
+                  </div>
+
+                  {/* Price Breakdown */}
+                  {checkIn && checkOut && totalPrice > 0 && (
+                    <div className="border-t border-gray-200 pt-4 space-y-2">
+                      <div className="flex justify-between text-sm text-[#1C1C1E]/70">
+                        <span>Subtotal</span>
+                        <span>${(parseFloat(listing.price) * Math.ceil((new Date(checkOut + 'T00:00:00').getTime() - new Date(checkIn + 'T00:00:00').getTime()) / (1000 * 60 * 60 * 24))).toFixed(2)}</span>
+                      </div>
+                      {appliedCoupon && discountAmount > 0 && (
+                        <div className="flex justify-between text-sm text-green-600">
+                          <span>Discount ({appliedCoupon.discountPercentage}%)</span>
+                          <span>-${discountAmount.toFixed(2)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-lg font-semibold text-[#1C1C1E] pt-2 border-t border-gray-200">
+                        <span>Total</span>
+                        <span>${totalPrice.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  )}
 
                   {bookingError && (
                     <div className="p-3 sm:p-4 bg-red-50 border-2 border-red-100 rounded-xl text-red-700 text-xs sm:text-sm font-light whitespace-pre-line">

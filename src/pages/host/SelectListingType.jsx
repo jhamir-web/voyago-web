@@ -57,7 +57,7 @@ const SelectListingType = () => {
   ];
 
   const handleSelectType = (type) => {
-    navigate(`/host/create-listing?type=${type.id}`);
+    navigate(`/host/create-listing-flow?category=${type.id}`);
   };
 
   return (

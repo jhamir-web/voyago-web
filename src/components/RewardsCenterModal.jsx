@@ -14,6 +14,7 @@ const RewardsCenterModal = ({ isOpen, onClose }) => {
   const [claimingReward, setClaimingReward] = useState(false);
   const [showRewardSuccess, setShowRewardSuccess] = useState(false);
   const [rewardAmount, setRewardAmount] = useState(0);
+  const [rewardsClaimed, setRewardsClaimed] = useState(1);
 
   useEffect(() => {
     if (isOpen && currentUser) {
@@ -43,6 +44,8 @@ const RewardsCenterModal = ({ isOpen, onClose }) => {
   const progress = points % progressToReward;
   const pointsNeeded = progressToReward - progress;
   const canClaimReward = points >= progressToReward;
+  const rewardsAvailable = Math.floor(points / progressToReward);
+  const canClaimAll = rewardsAvailable > 0;
 
   const handleClaimReward = async () => {
     if (!canClaimReward || claimingReward) return;
@@ -54,6 +57,7 @@ const RewardsCenterModal = ({ isOpen, onClose }) => {
         // Refresh data
         await fetchRewardsData();
         setRewardAmount(result.rewardAmount);
+        setRewardsClaimed(result.rewardsClaimed || 1);
         setShowRewardSuccess(true);
       } else {
         alert(result.error || "Failed to claim reward. Please try again.");
@@ -165,6 +169,28 @@ const RewardsCenterModal = ({ isOpen, onClose }) => {
                   <p className="text-sm sm:text-base text-[#8E8E93] font-light mb-5 sm:mb-6">
                     110 points per booking • 50 points per review • Claim ${REWARD_AMOUNT} at {progressToReward} points
                   </p>
+                  
+                  {/* Claim All Button - Show if user can claim multiple rewards */}
+                  {canClaimAll && rewardsAvailable > 1 && (
+                    <button
+                      onClick={handleClaimReward}
+                      disabled={claimingReward}
+                      className={`w-full px-5 py-3 sm:py-3.5 rounded-xl text-sm sm:text-base font-medium transition-all duration-200 mb-3 ${
+                        "bg-[#34C759] text-white hover:bg-[#30D158] hover:shadow-lg hover:scale-[1.02] active:scale-[0.98]"
+                      } ${claimingReward ? "opacity-50 cursor-wait" : ""}`}
+                    >
+                      {claimingReward ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          Claiming All...
+                        </span>
+                      ) : (
+                        `🎁 Claim All ${rewardsAvailable} Rewards ($${(rewardsAvailable * REWARD_AMOUNT).toFixed(0)})`
+                      )}
+                    </button>
+                  )}
+                  
+                  {/* Single Claim Button */}
                   <button
                     onClick={handleClaimReward}
                     disabled={!canClaimReward || claimingReward}
@@ -214,37 +240,55 @@ const RewardsCenterModal = ({ isOpen, onClose }) => {
                           style={{ animation: `fadeInUp 0.3s ease-out ${0.05 * index}s both` }}
                         >
                           <div className="flex items-center gap-3 sm:gap-4">
-                            <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center flex-shrink-0 ${
-                              transaction.type === 'cash_in' || transaction.type === 'reward_claim' ? 'bg-[#34C759]/10' : 'bg-red-100'
-                            }`}>
-                              <svg className={`w-5 h-5 sm:w-6 sm:h-6 ${
-                                transaction.type === 'cash_in' || transaction.type === 'reward_claim' ? 'text-[#34C759]' : 'text-red-500'
-                              }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                {transaction.type === 'cash_in' || transaction.type === 'reward_claim' ? (
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                ) : (
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-                                )}
-                              </svg>
-                            </div>
-                            <div>
-                              <p className="text-sm sm:text-base font-medium text-[#1C1C1E] capitalize mb-1">
-                                {transaction.type.replace('_', ' ')}
-                              </p>
-                              <p className="text-xs sm:text-sm text-[#8E8E93] font-light">
-                                {new Date(transaction.date).toLocaleDateString('en-US', { 
-                                  year: 'numeric', 
-                                  month: 'short', 
-                                  day: 'numeric' 
-                                })}
-                              </p>
-                            </div>
+                            {(() => {
+                              const isCredit = transaction.type === 'cash_in' || 
+                                             transaction.type === 'reward_claim' || 
+                                             transaction.type === 'booking_payout' || 
+                                             transaction.type === 'booking_refund';
+                              return (
+                                <>
+                                  <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center flex-shrink-0 ${
+                                    isCredit ? 'bg-[#34C759]/10' : 'bg-red-100'
+                                  }`}>
+                                    <svg className={`w-5 h-5 sm:w-6 sm:h-6 ${
+                                      isCredit ? 'text-[#34C759]' : 'text-red-500'
+                                    }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      {isCredit ? (
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                      ) : (
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                                      )}
+                                    </svg>
+                                  </div>
+                                  <div>
+                                    <p className="text-sm sm:text-base font-medium text-[#1C1C1E] capitalize mb-1">
+                                      {transaction.type.replace('_', ' ')}
+                                    </p>
+                                    <p className="text-xs sm:text-sm text-[#8E8E93] font-light">
+                                      {new Date(transaction.date).toLocaleDateString('en-US', { 
+                                        year: 'numeric', 
+                                        month: 'short', 
+                                        day: 'numeric' 
+                                      })}
+                                    </p>
+                                  </div>
+                                </>
+                              );
+                            })()}
                           </div>
-                          <p className={`text-base sm:text-lg font-medium ${
-                            transaction.type === 'cash_in' || transaction.type === 'reward_claim' ? 'text-[#34C759]' : 'text-red-500'
-                          }`}>
-                            {transaction.type === 'cash_in' || transaction.type === 'reward_claim' ? '+' : '-'}${Math.abs(transaction.amount).toFixed(2)}
-                          </p>
+                          {(() => {
+                            const isCredit = transaction.type === 'cash_in' || 
+                                           transaction.type === 'reward_claim' || 
+                                           transaction.type === 'booking_payout' || 
+                                           transaction.type === 'booking_refund';
+                            return (
+                              <p className={`text-base sm:text-lg font-medium ${
+                                isCredit ? 'text-[#34C759]' : 'text-red-500'
+                              }`}>
+                                {isCredit ? '+' : '-'}${Math.abs(transaction.amount).toFixed(2)}
+                              </p>
+                            );
+                          })()}
                         </div>
                       ))}
                     </div>
@@ -286,7 +330,7 @@ const RewardsCenterModal = ({ isOpen, onClose }) => {
 
                 {/* Success Message */}
                 <h3 className="text-2xl sm:text-3xl font-light text-[#1C1C1E] mb-3">
-                  Reward Claimed!
+                  {rewardsClaimed > 1 ? `${rewardsClaimed} Rewards Claimed!` : "Reward Claimed!"}
                 </h3>
                 <p className="text-base sm:text-lg text-[#8E8E93] font-light mb-6">
                   ${rewardAmount.toFixed(2)} has been added to your wallet

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
-import { collection, query, where, getDocs, onSnapshot, doc, updateDoc } from "firebase/firestore";
+import { collection, query, where, getDocs, onSnapshot, doc, updateDoc, addDoc, orderBy, getDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../../firebase";
 import { signOut } from "firebase/auth";
 import { auth } from "../../firebase";
@@ -10,7 +10,7 @@ import { PAYPAL_CLIENT_ID } from "../../config/paypal";
 import Header from "../../components/Header";
 
 const GuestDashboard = () => {
-  const { currentUser, userRole, loading: authLoading } = useAuth();
+  const { currentUser, userRole, userRoles, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -18,6 +18,16 @@ const GuestDashboard = () => {
   const [unreadCounts, setUnreadCounts] = useState({}); // { bookingId: count }
   const [payingBookingId, setPayingBookingId] = useState(null); // Track which booking is being paid
   const [paymentProcessing, setPaymentProcessing] = useState(false);
+  const [showWishlistModal, setShowWishlistModal] = useState(false);
+  const [selectedBookingForWishlist, setSelectedBookingForWishlist] = useState(null);
+  const [wishlistTitle, setWishlistTitle] = useState("");
+  const [wishlistDescription, setWishlistDescription] = useState("");
+  const [wishlistCategory, setWishlistCategory] = useState("accommodation");
+  const [isSubmittingWishlist, setIsSubmittingWishlist] = useState(false);
+  const [existingWishlists, setExistingWishlists] = useState({}); // { bookingId: true/false }
+  const [cancellingBookingId, setCancellingBookingId] = useState(null);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [selectedBookingToCancel, setSelectedBookingToCancel] = useState(null);
 
   useEffect(() => {
     // Wait for auth to finish loading before checking
@@ -30,13 +40,15 @@ const GuestDashboard = () => {
       return;
     }
 
-    if (userRole !== "guest") {
+    // Allow access if user has guest role (even if they also have host role)
+    const hasGuestRole = userRole === "guest" || (userRoles && userRoles.includes("guest"));
+    if (!hasGuestRole) {
       navigate("/");
       return;
     }
 
     fetchBookings();
-  }, [currentUser, userRole, authLoading, navigate]);
+  }, [currentUser, userRole, userRoles, authLoading, navigate]);
 
   const fetchBookings = async () => {
     try {
@@ -68,6 +80,21 @@ const GuestDashboard = () => {
 
       console.log("Bookings fetched:", bookingsData);
       setBookings(bookingsData);
+
+      // Fetch existing wishlists to check which bookings already have wishlists
+      const wishlistsQuery = query(
+        collection(db, "wishlistRequests"),
+        where("guestId", "==", currentUser.uid)
+      );
+      const wishlistsSnapshot = await getDocs(wishlistsQuery);
+      const wishlistsMap = {};
+      wishlistsSnapshot.forEach((doc) => {
+        const data = doc.data();
+        if (data.bookingId) {
+          wishlistsMap[data.bookingId] = true;
+        }
+      });
+      setExistingWishlists(wishlistsMap);
     } catch (error) {
       console.error("Error fetching bookings:", error);
       if (error.code === "permission-denied") {
@@ -150,6 +177,244 @@ const GuestDashboard = () => {
   };
 
   // Filter bookings based on selected filter
+  // Check if checkout date has passed
+  const isCheckoutPassed = (checkOutDate) => {
+    const checkout = new Date(checkOutDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    checkout.setHours(0, 0, 0, 0);
+    return checkout < today;
+  };
+
+  // Check if booking is within 24 hours of check-in
+  const isWithin24Hours = (checkInDate) => {
+    const checkIn = new Date(checkInDate);
+    const now = new Date();
+    const hoursUntilCheckIn = (checkIn - now) / (1000 * 60 * 60);
+    return hoursUntilCheckIn > 0 && hoursUntilCheckIn <= 24;
+  };
+
+  // Calculate refund amount based on cancellation time
+  const calculateRefund = (booking) => {
+    if (isWithin24Hours(booking.checkIn)) {
+      return booking.totalPrice * 0.7; // 70% refund
+    }
+    return 0; // No refund after 24 hours
+  };
+
+  // Handle booking cancellation
+  const handleCancelBooking = async (booking) => {
+    if (booking.status === "cancelled") {
+      return;
+    }
+
+    const refundAmount = calculateRefund(booking);
+    const refundText = refundAmount > 0 
+      ? `You will receive a 70% refund of $${refundAmount.toFixed(2)}.`
+      : "No refund will be issued (cancelled after 24 hours before check-in).";
+
+    if (!window.confirm(`Are you sure you want to cancel this booking?\n\n${refundText}\n\nThis action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      setCancellingBookingId(booking.id);
+
+      const bookingRef = doc(db, "bookings", booking.id);
+      const bookingDoc = await getDoc(bookingRef);
+      
+      if (!bookingDoc.exists()) {
+        alert("Booking not found");
+        return;
+      }
+
+      const bookingData = bookingDoc.data();
+      const bookingAmount = bookingData.totalPrice || 0;
+
+      // Update booking status
+      await updateDoc(bookingRef, {
+        status: "cancelled",
+        cancelledAt: new Date().toISOString(),
+        cancelledBy: currentUser.uid,
+        refundAmount: refundAmount,
+        updatedAt: new Date().toISOString()
+      });
+
+      // Process refund if applicable
+      if (refundAmount > 0) {
+        // Add refund to guest's wallet
+        const guestRef = doc(db, "users", currentUser.uid);
+        const guestDoc = await getDoc(guestRef);
+        
+        if (guestDoc.exists()) {
+          const guestData = guestDoc.data();
+          const currentWalletBalance = guestData.walletBalance || 0;
+          const guestTransactions = guestData.transactions || [];
+          
+          const refundTransaction = {
+            type: "booking_cancellation_refund",
+            amount: refundAmount,
+            bookingId: booking.id,
+            date: new Date().toISOString(),
+            status: "completed",
+            description: `Refund for cancelled booking: ${bookingData.listingTitle || "Booking"} (70% refund)`
+          };
+          
+          await updateDoc(guestRef, {
+            walletBalance: currentWalletBalance + refundAmount,
+            transactions: [refundTransaction, ...guestTransactions].slice(0, 10)
+          });
+        }
+
+        // If booking was confirmed, reduce host's pending balance
+        if (bookingData.status === "confirmed" && bookingData.hostId) {
+          const hostRef = doc(db, "users", bookingData.hostId);
+          const hostDoc = await getDoc(hostRef);
+          
+          if (hostDoc.exists()) {
+            const hostData = hostDoc.data();
+            const currentPendingBalance = hostData.pendingBalance || 0;
+            const hostTransactions = hostData.transactions || [];
+            
+            // Deduct the full booking amount from host's pending balance
+            const deductionTransaction = {
+              type: "booking_cancelled",
+              amount: -bookingAmount,
+              bookingId: booking.id,
+              date: new Date().toISOString(),
+              status: "completed",
+              description: `Booking cancelled: ${bookingData.listingTitle || "Booking"}`
+            };
+            
+            await updateDoc(hostRef, {
+              pendingBalance: Math.max(0, currentPendingBalance - bookingAmount),
+              transactions: [deductionTransaction, ...hostTransactions].slice(0, 10)
+            });
+          }
+        }
+      } else {
+        // No refund - still need to update host's pending balance if booking was confirmed
+        if (bookingData.status === "confirmed" && bookingData.hostId) {
+          const hostRef = doc(db, "users", bookingData.hostId);
+          const hostDoc = await getDoc(hostRef);
+          
+          if (hostDoc.exists()) {
+            const hostData = hostDoc.data();
+            const currentPendingBalance = hostData.pendingBalance || 0;
+            const hostTransactions = hostData.transactions || [];
+            
+            const deductionTransaction = {
+              type: "booking_cancelled",
+              amount: -bookingAmount,
+              bookingId: booking.id,
+              date: new Date().toISOString(),
+              status: "completed",
+              description: `Booking cancelled (no refund): ${bookingData.listingTitle || "Booking"}`
+            };
+            
+            await updateDoc(hostRef, {
+              pendingBalance: Math.max(0, currentPendingBalance - bookingAmount),
+              transactions: [deductionTransaction, ...hostTransactions].slice(0, 10)
+            });
+          }
+        }
+      }
+
+      // Send system message
+      try {
+        const conversationId = booking.id;
+        const systemMessage = {
+          bookingId: booking.id,
+          conversationId: conversationId,
+          senderId: "system",
+          senderName: "System",
+          senderEmail: "system@voyago.com",
+          receiverId: bookingData.hostId,
+          receiverEmail: bookingData.hostEmail || "",
+          message: `Booking for "${bookingData.listingTitle || "this listing"}" has been cancelled by the guest.${refundAmount > 0 ? ` Guest received a 70% refund of $${refundAmount.toFixed(2)}.` : " No refund was issued."}`,
+          isSystem: true,
+          systemType: "booking_cancelled",
+          createdAt: serverTimestamp(),
+          read: false,
+        };
+        
+        await addDoc(collection(db, "messages"), systemMessage);
+      } catch (messageError) {
+        console.error("Error sending system message:", messageError);
+      }
+
+      // Refresh bookings
+      await fetchBookings();
+      
+      alert(`Booking cancelled successfully.${refundAmount > 0 ? ` $${refundAmount.toFixed(2)} has been refunded to your wallet.` : " No refund was issued."}`);
+    } catch (error) {
+      console.error("Error cancelling booking:", error);
+      alert("Failed to cancel booking. Please try again.");
+    } finally {
+      setCancellingBookingId(null);
+      setShowCancelConfirm(false);
+      setSelectedBookingToCancel(null);
+    }
+  };
+
+  // Handle wishlist creation
+  const handleOpenWishlistModal = (booking) => {
+    setSelectedBookingForWishlist(booking);
+    setShowWishlistModal(true);
+  };
+
+  const handleSubmitWishlist = async () => {
+    if (!wishlistTitle.trim() || !wishlistDescription.trim()) {
+      alert("Please fill in all fields");
+      return;
+    }
+
+    try {
+      setIsSubmittingWishlist(true);
+      
+      const booking = selectedBookingForWishlist;
+      
+      // Create wishlist request
+      await addDoc(collection(db, "wishlistRequests"), {
+        guestId: currentUser.uid,
+        guestEmail: currentUser.email,
+        guestName: currentUser.displayName || currentUser.email?.split('@')[0],
+        hostId: booking.hostId,
+        hostEmail: booking.hostEmail,
+        bookingId: booking.id,
+        listingId: booking.listingId,
+        listingTitle: booking.listingTitle,
+        listingLocation: booking.listingLocation,
+        title: wishlistTitle.trim(),
+        description: wishlistDescription.trim(),
+        category: wishlistCategory,
+        status: "pending",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+
+      // Update existing wishlists map
+      setExistingWishlists(prev => ({
+        ...prev,
+        [booking.id]: true
+      }));
+
+      // Reset form
+      setWishlistTitle("");
+      setWishlistDescription("");
+      setWishlistCategory("accommodation");
+      setShowWishlistModal(false);
+      setSelectedBookingForWishlist(null);
+
+      alert("Improvement request submitted successfully!");
+    } catch (error) {
+      console.error("Error submitting wishlist:", error);
+      alert("Failed to submit request. Please try again.");
+    } finally {
+      setIsSubmittingWishlist(false);
+    }
+  };
+
   const filteredBookings = bookings.filter((booking) => {
     const checkInDate = new Date(booking.checkIn);
     const today = new Date();
@@ -351,6 +616,35 @@ const GuestDashboard = () => {
                       </div>
                     </div>
                     
+                    {/* Wishlist Button - Only show for past bookings without wishlist */}
+                    {isCheckoutPassed(booking.checkOut) && 
+                     (booking.status === "confirmed" || booking.status === "completed") &&
+                     !existingWishlists[booking.id] && (
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleOpenWishlistModal(booking);
+                        }}
+                        className="w-full px-4 py-2 bg-[#0071E3] text-white rounded-xl text-sm font-medium hover:bg-[#0051D0] transition-all flex items-center justify-center gap-2"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                        </svg>
+                        <span>Create Wishlist Request</span>
+                      </button>
+                    )}
+
+                    {/* Show if wishlist already exists */}
+                    {existingWishlists[booking.id] && (
+                      <div className="w-full px-4 py-2 bg-green-50 text-green-700 rounded-xl text-sm font-medium flex items-center justify-center gap-2">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span>Wishlist Submitted</span>
+                      </div>
+                    )}
+                    
                     {/* Payment Status & Actions */}
                     {booking.status === "pending" && booking.paymentStatus !== "paid" && (
                       <div className="mb-3">
@@ -464,20 +758,62 @@ const GuestDashboard = () => {
                         )}
                       </div>
                     )}
+
+                    {/* Cancel Booking Button - Only for confirmed/upcoming bookings */}
+                    {booking.status === "confirmed" && 
+                     !isCheckoutPassed(booking.checkIn) && 
+                     booking.status !== "cancelled" && (
+                      <>
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleCancelBooking(booking);
+                          }}
+                          disabled={cancellingBookingId === booking.id}
+                          className="w-full px-4 py-2 bg-red-500 text-white rounded-xl text-sm font-medium hover:bg-red-600 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {cancellingBookingId === booking.id ? (
+                            <>
+                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                              <span>Cancelling...</span>
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                              <span>Cancel Booking</span>
+                            </>
+                          )}
+                        </button>
+
+                        {/* Refund Information */}
+                        <div className="text-xs text-[#8E8E93] font-light text-center px-2 py-1 bg-gray-50 rounded-lg">
+                          {isWithin24Hours(booking.checkIn) ? (
+                            <span>Cancel within 24hrs: <span className="text-green-600 font-medium">70% refund (${calculateRefund(booking).toFixed(2)})</span></span>
+                          ) : (
+                            <span>Cancel after 24hrs: <span className="text-red-600 font-medium">No refund</span></span>
+                          )}
+                        </div>
+                      </>
+                    )}
                     
                     {/* Chat Button */}
-                    <Link
-                      to={`/chat/${booking.id}`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="relative block w-full text-center px-3 py-1.5 bg-[#0071E3] text-white rounded-lg text-xs sm:text-sm font-light hover:bg-[#0051D0] transition-colors"
-                    >
-                      Chat
-                      {(unreadCounts[booking.id] || 0) > 0 && (
-                        <span className="absolute -top-1 -right-1 bg-[#FF3B30] text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-medium">
-                          {(unreadCounts[booking.id] || 0) > 9 ? '9+' : unreadCounts[booking.id]}
-                        </span>
-                      )}
-                    </Link>
+                    {booking.status !== "cancelled" && (
+                      <Link
+                        to={`/chat/${booking.id}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="relative block w-full text-center px-3 py-1.5 bg-[#0071E3] text-white rounded-lg text-xs sm:text-sm font-light hover:bg-[#0051D0] transition-colors"
+                      >
+                        Chat
+                        {(unreadCounts[booking.id] || 0) > 0 && (
+                          <span className="absolute -top-1 -right-1 bg-[#FF3B30] text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-medium">
+                            {(unreadCounts[booking.id] || 0) > 9 ? '9+' : unreadCounts[booking.id]}
+                          </span>
+                        )}
+                      </Link>
+                    )}
                   </div>
                 </div>
               </Link>
@@ -489,8 +825,109 @@ const GuestDashboard = () => {
       {/* Footer */}
       <div className="bg-[#1C1C1E] text-white px-4 sm:px-6 py-3 sm:py-4 flex justify-between items-center text-xs sm:text-sm font-light mt-12 sm:mt-16">
         <div>© 2025 Voyago</div>
-        <div>Privacy & Terms</div>
+        <div>Privacy & Terms        </div>
       </div>
+
+      {/* Wishlist Creation Modal */}
+      {showWishlistModal && selectedBookingForWishlist && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl sm:text-2xl font-light text-[#1C1C1E]">Create Improvement Request</h3>
+                <button
+                  onClick={() => {
+                    setShowWishlistModal(false);
+                    setSelectedBookingForWishlist(null);
+                    setWishlistTitle("");
+                    setWishlistDescription("");
+                    setWishlistCategory("accommodation");
+                  }}
+                  className="p-2 text-[#8E8E93] hover:text-[#1C1C1E] hover:bg-gray-100 rounded-lg transition-all"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <p className="text-sm text-[#8E8E93] font-light mt-2">
+                {selectedBookingForWishlist.listingTitle} - {new Date(selectedBookingForWishlist.checkIn).toLocaleDateString()} to {new Date(selectedBookingForWishlist.checkOut).toLocaleDateString()}
+              </p>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Category */}
+              <div>
+                <label className="block text-sm font-medium text-[#1C1C1E] mb-2">
+                  Category *
+                </label>
+                <select
+                  value={wishlistCategory}
+                  onChange={(e) => setWishlistCategory(e.target.value)}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0071E3]/20 focus:border-[#0071E3]"
+                >
+                  <option value="accommodation">Accommodation</option>
+                  <option value="amenities">Amenities</option>
+                  <option value="activities">Activities</option>
+                  <option value="services">Services</option>
+                  <option value="location">Location</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+
+              {/* Title */}
+              <div>
+                <label className="block text-sm font-medium text-[#1C1C1E] mb-2">
+                  Request Title *
+                </label>
+                <input
+                  type="text"
+                  value={wishlistTitle}
+                  onChange={(e) => setWishlistTitle(e.target.value)}
+                  placeholder="e.g., Add WiFi, Improve parking, etc."
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0071E3]/20 focus:border-[#0071E3]"
+                />
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-sm font-medium text-[#1C1C1E] mb-2">
+                  Description *
+                </label>
+                <textarea
+                  value={wishlistDescription}
+                  onChange={(e) => setWishlistDescription(e.target.value)}
+                  placeholder="Describe your improvement suggestion in detail..."
+                  rows={5}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0071E3]/20 focus:border-[#0071E3] resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-gray-200 flex items-center justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowWishlistModal(false);
+                  setSelectedBookingForWishlist(null);
+                  setWishlistTitle("");
+                  setWishlistDescription("");
+                  setWishlistCategory("accommodation");
+                }}
+                className="px-6 py-2 bg-gray-100 text-[#1C1C1E] rounded-xl text-sm font-medium hover:bg-gray-200 transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSubmitWishlist}
+                disabled={isSubmittingWishlist}
+                className="px-6 py-2 bg-[#0071E3] text-white rounded-xl text-sm font-medium hover:bg-[#0051D0] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSubmittingWishlist ? "Submitting..." : "Submit Request"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

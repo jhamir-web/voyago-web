@@ -7,7 +7,7 @@ import WalletModal from "./WalletModal";
 import RewardsCenterModal from "./RewardsCenterModal";
 
 const Header = () => {
-  const { currentUser, userRole } = useAuth();
+  const { currentUser, userRole, userRoles } = useAuth();
   const navigate = useNavigate();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showWallet, setShowWallet] = useState(false);
@@ -67,7 +67,7 @@ const Header = () => {
                 Message
               </Link>
               <Link
-                to={currentUser && userRole === "guest" ? "/guest/dashboard" : "/login"}
+                to={currentUser && (userRole === "guest" || (userRoles && userRoles.includes("guest"))) ? "/guest/dashboard" : "/login"}
                 className="text-sm font-light text-white/90 hover:text-white transition-colors duration-200"
               >
                 My Bookings
@@ -168,25 +168,10 @@ const Header = () => {
                           <button
                             onClick={() => {
                               setShowUserMenu(false);
-                              // Navigate to settings (to be created)
-                            }}
-                            className="user-dropdown-item w-full text-sm text-[#1C1C1E] hover:bg-gray-50 rounded-xl transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] transform group"
-                            style={{ animation: 'fadeInUp 0.3s ease-out 0.1s both' }}
-                          >
-                            <svg className="text-[#0071E3] transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            </svg>
-                            <span className="font-light">Settings</span>
-                          </button>
-
-                          <button
-                            onClick={() => {
-                              setShowUserMenu(false);
                               setShowRewards(true);
                             }}
                             className="user-dropdown-item w-full text-sm text-[#1C1C1E] hover:bg-gray-50 rounded-xl transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] transform group"
-                            style={{ animation: 'fadeInUp 0.3s ease-out 0.15s both' }}
+                            style={{ animation: 'fadeInUp 0.3s ease-out 0.1s both' }}
                           >
                             <svg className="text-[#0071E3] transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v13m0-13V6a2 2 0 112 2v7m-2 2H10a2 2 0 01-2-2V9a2 2 0 012-2h2m-4 5h4m-4 0v5a2 2 0 002 2h4a2 2 0 002-2v-5m-6 0h6" />
@@ -200,7 +185,7 @@ const Header = () => {
                               setShowWallet(true);
                             }}
                             className="user-dropdown-item w-full text-sm text-[#1C1C1E] hover:bg-gray-50 rounded-xl transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] transform group"
-                            style={{ animation: 'fadeInUp 0.3s ease-out 0.2s both' }}
+                            style={{ animation: 'fadeInUp 0.3s ease-out 0.15s both' }}
                           >
                             <svg className="text-[#0071E3] transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -216,7 +201,7 @@ const Header = () => {
                               setShowUserMenu(false);
                             }}
                             className="user-dropdown-item w-full text-sm text-red-500 hover:bg-red-50 rounded-xl transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] transform group"
-                            style={{ animation: 'fadeInUp 0.3s ease-out 0.25s both' }}
+                            style={{ animation: 'fadeInUp 0.3s ease-out 0.2s both' }}
                           >
                             <svg className="text-red-500 transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -306,7 +291,7 @@ const Header = () => {
               Message
             </Link>
             <Link
-              to={currentUser && userRole === "guest" ? "/guest/dashboard" : "/login"}
+              to={currentUser && (userRole === "guest" || (userRoles && userRoles.includes("guest"))) ? "/guest/dashboard" : "/login"}
               onClick={() => setMobileMenuOpen(false)}
               className="block text-sm font-light text-white/90 hover:text-white transition-all duration-200 py-2 hover:translate-x-1"
             >

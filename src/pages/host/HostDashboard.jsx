@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
-import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, onSnapshot } from "firebase/firestore";
+import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, onSnapshot, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../../firebase";
 import { signOut } from "firebase/auth";
 import { auth } from "../../firebase";
@@ -13,7 +13,7 @@ const HostDashboard = () => {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("listings"); // listings, bookings
-  const [selectedFilter, setSelectedFilter] = useState("all"); // all, pending, confirmed, cancelled
+  const [selectedFilter, setSelectedFilter] = useState("underReview"); // underReview, today, upcoming, rejected
   const [unreadCounts, setUnreadCounts] = useState({}); // { bookingId: count }
 
   useEffect(() => {
@@ -149,33 +149,31 @@ const HostDashboard = () => {
   }, [bookings, currentUser]);
 
   const handleUpdateBookingStatus = async (bookingId, newStatus) => {
-    if (newStatus === "confirmed") {
-      // Check for date conflicts before confirming
-      const bookingToConfirm = bookings.find(b => b.id === bookingId);
-      if (!bookingToConfirm) {
-        alert("Booking not found.");
-        return;
-      }
+    const booking = bookings.find(b => b.id === bookingId);
+    if (!booking) {
+      alert("Booking not found.");
+      return;
+    }
 
+    if (newStatus === "confirmed") {
       // IMPORTANT: Only allow confirming PAID bookings
-      if (bookingToConfirm.paymentStatus !== "paid") {
+      if (booking.paymentStatus !== "paid") {
         alert("❌ Cannot confirm booking. Payment has not been completed. Please wait for the guest to complete payment.");
         return;
       }
 
       try {
         // Check for conflicts with other confirmed bookings
-        // Use the bookings we already have in state (more efficient and avoids permission issues)
-        const checkInDate = new Date(bookingToConfirm.checkIn);
-        const checkOutDate = new Date(bookingToConfirm.checkOut);
+        const checkInDate = new Date(booking.checkIn);
+        const checkOutDate = new Date(booking.checkOut);
         
         let hasConflict = false;
         let conflictInfo = null;
 
-        // Check against all bookings for this listing (we already have them loaded)
+        // Check against all bookings for this listing
         bookings.forEach((existingBooking) => {
           if (existingBooking.id === bookingId) return; // Skip the current booking
-          if (existingBooking.listingId !== bookingToConfirm.listingId) return; // Skip other listings
+          if (existingBooking.listingId !== booking.listingId) return; // Skip other listings
           if (existingBooking.status !== "confirmed") return; // Only check confirmed bookings
           
           const existingCheckIn = new Date(existingBooking.checkIn);
@@ -202,19 +200,140 @@ const HostDashboard = () => {
       }
     }
 
-    if (!window.confirm(`Are you sure you want to ${newStatus} this booking?`)) {
+    const actionText = newStatus === "confirmed" ? "accept" : newStatus === "rejected" ? "reject" : newStatus;
+    if (!window.confirm(`Are you sure you want to ${actionText} this booking?`)) {
       return;
     }
 
     try {
+      // Update booking status
       await updateDoc(doc(db, "bookings", bookingId), {
         status: newStatus,
         updatedAt: new Date().toISOString(),
       });
+
+      // Handle wallet transfers
+      const bookingAmount = booking.totalPrice || 0;
+      
+      if (newStatus === "confirmed") {
+        // Add to host's pending balance (not actual wallet - money is held by admin)
+        const hostRef = doc(db, "users", booking.hostId);
+        const hostDoc = await getDoc(hostRef);
+        
+        if (hostDoc.exists()) {
+          const hostData = hostDoc.data();
+          const currentPendingBalance = hostData.pendingBalance || 0;
+          const hostTransactions = hostData.transactions || [];
+          
+          const hostTransaction = {
+            type: "booking_pending",
+            amount: bookingAmount,
+            bookingId: bookingId,
+            date: new Date().toISOString(),
+            status: "pending", // Pending until withdrawal
+            description: `Pending payment for booking: ${booking.listingTitle || "Booking"}`,
+            withdrawalRequestId: null // Will be set when withdrawal is requested
+          };
+          
+          await updateDoc(hostRef, {
+            pendingBalance: currentPendingBalance + bookingAmount,
+            transactions: [hostTransaction, ...hostTransactions].slice(0, 10)
+          });
+        }
+        
+        // Record payment to admin (money goes to admin's PayPal)
+        // Note: Actual PayPal transfer to admin would be handled by backend/webhook
+        // For now, we'll track it in a separate collection
+        try {
+          await addDoc(collection(db, "adminPayments"), {
+            bookingId: bookingId,
+            hostId: booking.hostId,
+            guestId: booking.guestId,
+            amount: bookingAmount,
+            status: "received", // Money received by admin
+            paymentMethod: booking.paymentMethod || "paypal",
+            paypalOrderId: booking.paypalOrderId || null,
+            createdAt: serverTimestamp(),
+            withdrawalRequestId: null // Will be set when host requests withdrawal
+          });
+        } catch (error) {
+          console.error("Error recording admin payment:", error);
+        }
+
+        // Send system message to guest about acceptance
+        try {
+          const conversationId = bookingId;
+          const systemMessage = {
+            bookingId: bookingId,
+            conversationId: conversationId,
+            senderId: "system",
+            senderName: "System",
+            senderEmail: "system@voyago.com",
+            receiverId: booking.guestId,
+            receiverEmail: booking.guestEmail || "",
+            message: `Your booking for "${booking.listingTitle || "this listing"}" has been accepted! We're looking forward to hosting you.`,
+            isSystem: true,
+            systemType: "booking_accepted",
+            createdAt: serverTimestamp(),
+            read: false,
+          };
+          
+          await addDoc(collection(db, "messages"), systemMessage);
+        } catch (messageError) {
+          console.error("Error sending system message:", messageError);
+        }
+      } else if (newStatus === "rejected") {
+        // Refund money to guest's wallet
+        const guestRef = doc(db, "users", booking.guestId);
+        const guestDoc = await getDoc(guestRef);
+        
+        if (guestDoc.exists()) {
+          const guestData = guestDoc.data();
+          const currentGuestBalance = guestData.walletBalance || 0;
+          const guestTransactions = guestData.transactions || [];
+          
+          const guestTransaction = {
+            type: "booking_refund",
+            amount: bookingAmount,
+            bookingId: bookingId,
+            date: new Date().toISOString(),
+            status: "completed",
+            description: `Refund for rejected booking: ${booking.listingTitle || "Booking"}`
+          };
+          
+          await updateDoc(guestRef, {
+            walletBalance: currentGuestBalance + bookingAmount,
+            transactions: [guestTransaction, ...guestTransactions].slice(0, 10)
+          });
+        }
+
+        // Send system message to guest about rejection and refund
+        try {
+          const conversationId = bookingId;
+          const systemMessage = {
+            bookingId: bookingId,
+            conversationId: conversationId,
+            senderId: "system",
+            senderName: "System",
+            senderEmail: "system@voyago.com",
+            receiverId: booking.guestId,
+            receiverEmail: booking.guestEmail || "",
+            message: `Your booking for "${booking.listingTitle || "this listing"}" has been rejected. $${bookingAmount.toFixed(2)} was refunded to your wallet.`,
+            isSystem: true,
+            systemType: "booking_rejected",
+            createdAt: serverTimestamp(),
+            read: false,
+          };
+          
+          await addDoc(collection(db, "messages"), systemMessage);
+        } catch (messageError) {
+          console.error("Error sending system message:", messageError);
+        }
+      }
       
       // Refresh bookings
       await fetchData();
-      alert(`Booking ${newStatus} successfully!`);
+      alert(`Booking ${actionText === "accept" ? "accepted" : actionText === "reject" ? "rejected" : newStatus} successfully! ${newStatus === "confirmed" ? `$${bookingAmount.toFixed(2)} has been added to your pending balance. Request withdrawal to receive funds.` : newStatus === "rejected" ? `$${bookingAmount.toFixed(2)} has been refunded to the guest.` : ""}`);
     } catch (error) {
       console.error("Error updating booking status:", error);
       alert("Failed to update booking status. Please try again.");
@@ -263,18 +382,63 @@ const HostDashboard = () => {
     }
   };
 
-      // Filter bookings
+      // Filter bookings based on selected tab
       const filteredBookings = (bookings || []).filter((booking) => {
-        if (selectedFilter === "all") return true;
-        return booking.status === selectedFilter;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const checkInDate = new Date(booking.checkIn);
+        checkInDate.setHours(0, 0, 0, 0);
+        const checkOutDate = new Date(booking.checkOut);
+        checkOutDate.setHours(0, 0, 0, 0);
+
+        switch (selectedFilter) {
+          case "underReview":
+            // Show pending bookings waiting for approval
+            return booking.status === "pending";
+          case "today":
+            // Show accepted bookings (confirmed) that are happening today
+            return booking.status === "confirmed" && 
+                   checkInDate.getTime() === today.getTime();
+          case "upcoming":
+            // Show accepted bookings (confirmed) that are in the future
+            return booking.status === "confirmed" && 
+                   checkInDate.getTime() > today.getTime();
+          case "rejected":
+            // Show rejected or cancelled bookings
+            return booking.status === "rejected" || booking.status === "cancelled";
+          default:
+            return true;
+        }
       });
 
       // Calculate stats
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const pendingBookings = (bookings || []).filter(b => b.status === "pending");
+      const todayBookings = (bookings || []).filter(b => {
+        if (b.status !== "confirmed") return false;
+        const checkIn = new Date(b.checkIn);
+        checkIn.setHours(0, 0, 0, 0);
+        return checkIn.getTime() === today.getTime();
+      });
+      const upcomingBookings = (bookings || []).filter(b => {
+        if (b.status !== "confirmed") return false;
+        const checkIn = new Date(b.checkIn);
+        checkIn.setHours(0, 0, 0, 0);
+        return checkIn.getTime() > today.getTime();
+      });
+      const rejectedBookings = (bookings || []).filter(b => 
+        b.status === "rejected" || b.status === "cancelled"
+      );
+
       const stats = {
         totalListings: (listings || []).length,
         activeListings: (listings || []).filter(l => l.status === "active").length,
         totalBookings: (bookings || []).length,
-        pendingBookings: (bookings || []).filter(b => b.status === "pending").length,
+        pendingBookings: pendingBookings.length,
+        todayBookings: todayBookings.length,
+        upcomingBookings: upcomingBookings.length,
+        rejectedBookings: rejectedBookings.length,
         confirmedBookings: (bookings || []).filter(b => b.status === "confirmed").length,
         totalRevenue: (bookings || [])
           .filter(b => b.status === "confirmed" || b.status === "completed")
@@ -288,7 +452,8 @@ const HostDashboard = () => {
       case "active":
         return "bg-[#34C759]/10 text-[#34C759]";
       case "pending":
-        return "bg-yellow-100 text-yellow-700";
+        return "bg-[#FF9500]/10 text-[#FF9500]";
+      case "rejected":
       case "cancelled":
       case "inactive":
         return "bg-red-100 text-red-700";
@@ -466,7 +631,13 @@ const HostDashboard = () => {
                             ${listing.price}
                           </span>
                           <span className="text-xs sm:text-sm text-[#1C1C1E]/70 font-light ml-1">
-                            /night
+                            {listing.category === "place" || listing.subcategory || listing.placeType 
+                              ? "/night" 
+                              : listing.category === "experience" || listing.activityType 
+                              ? "/person" 
+                              : listing.category === "service" || listing.serviceType 
+                              ? "/service" 
+                              : "/night"}
                           </span>
                         </div>
                         {listing.maxGuests && (
@@ -510,50 +681,50 @@ const HostDashboard = () => {
           <>
             <div className="mb-6">
               <h2 className="text-xl sm:text-2xl font-light text-[#1C1C1E] mb-4">
-                Bookings
+                Manage Bookings
               </h2>
               
-              {/* Filter Buttons */}
-              <div className="flex flex-wrap gap-2 sm:gap-3">
+              {/* Filter Tabs */}
+              <div className="flex flex-wrap gap-2 sm:gap-3 border-b border-gray-200 pb-2">
                 <button
-                  onClick={() => setSelectedFilter("all")}
-                  className={`px-4 sm:px-6 py-2 sm:py-3 rounded-full text-sm sm:text-base font-light transition-all ${
-                    selectedFilter === "all"
-                      ? "bg-[#0071E3] text-white shadow-md"
-                      : "bg-white border border-gray-300 text-[#1C1C1E] hover:border-gray-400"
+                  onClick={() => setSelectedFilter("underReview")}
+                  className={`px-4 sm:px-6 py-2 sm:py-3 rounded-t-lg text-sm sm:text-base font-light transition-all border-b-2 ${
+                    selectedFilter === "underReview"
+                      ? "border-[#FF9500] text-[#FF9500]"
+                      : "border-transparent text-[#1C1C1E]/70 hover:text-[#1C1C1E]"
                   }`}
                 >
-                  All
+                  Under Review ({stats.pendingBookings})
                 </button>
                 <button
-                  onClick={() => setSelectedFilter("pending")}
-                  className={`px-4 sm:px-6 py-2 sm:py-3 rounded-full text-sm sm:text-base font-light transition-all ${
-                    selectedFilter === "pending"
-                      ? "bg-[#0071E3] text-white shadow-md"
-                      : "bg-white border border-gray-300 text-[#1C1C1E] hover:border-gray-400"
+                  onClick={() => setSelectedFilter("today")}
+                  className={`px-4 sm:px-6 py-2 sm:py-3 rounded-t-lg text-sm sm:text-base font-light transition-all border-b-2 ${
+                    selectedFilter === "today"
+                      ? "border-[#FF9500] text-[#FF9500]"
+                      : "border-transparent text-[#1C1C1E]/70 hover:text-[#1C1C1E]"
                   }`}
                 >
-                  Pending ({stats.pendingBookings})
+                  Today ({stats.todayBookings})
                 </button>
                 <button
-                  onClick={() => setSelectedFilter("confirmed")}
-                  className={`px-4 sm:px-6 py-2 sm:py-3 rounded-full text-sm sm:text-base font-light transition-all ${
-                    selectedFilter === "confirmed"
-                      ? "bg-[#0071E3] text-white shadow-md"
-                      : "bg-white border border-gray-300 text-[#1C1C1E] hover:border-gray-400"
+                  onClick={() => setSelectedFilter("upcoming")}
+                  className={`px-4 sm:px-6 py-2 sm:py-3 rounded-t-lg text-sm sm:text-base font-light transition-all border-b-2 ${
+                    selectedFilter === "upcoming"
+                      ? "border-[#FF9500] text-[#FF9500]"
+                      : "border-transparent text-[#1C1C1E]/70 hover:text-[#1C1C1E]"
                   }`}
                 >
-                  Confirmed ({stats.confirmedBookings})
+                  Upcoming ({stats.upcomingBookings})
                 </button>
                 <button
-                  onClick={() => setSelectedFilter("cancelled")}
-                  className={`px-4 sm:px-6 py-2 sm:py-3 rounded-full text-sm sm:text-base font-light transition-all ${
-                    selectedFilter === "cancelled"
-                      ? "bg-[#0071E3] text-white shadow-md"
-                      : "bg-white border border-gray-300 text-[#1C1C1E] hover:border-gray-400"
+                  onClick={() => setSelectedFilter("rejected")}
+                  className={`px-4 sm:px-6 py-2 sm:py-3 rounded-t-lg text-sm sm:text-base font-light transition-all border-b-2 ${
+                    selectedFilter === "rejected"
+                      ? "border-[#FF9500] text-[#FF9500]"
+                      : "border-transparent text-[#1C1C1E]/70 hover:text-[#1C1C1E]"
                   }`}
                 >
-                  Cancelled
+                  Rejected / Cancelled ({stats.rejectedBookings})
                 </button>
               </div>
             </div>
@@ -562,12 +733,16 @@ const HostDashboard = () => {
               <div className="text-center py-12 sm:py-16">
                 <div className="text-5xl sm:text-6xl mb-4 sm:mb-6">📅</div>
                 <h2 className="text-2xl sm:text-3xl font-light text-[#1C1C1E] mb-2">
-                  {selectedFilter === "all" ? "No bookings yet" : `No ${selectedFilter} bookings`}
+                  {selectedFilter === "underReview" && "No bookings under review"}
+                  {selectedFilter === "today" && "No bookings today"}
+                  {selectedFilter === "upcoming" && "No upcoming bookings"}
+                  {selectedFilter === "rejected" && "No rejected or cancelled bookings"}
                 </h2>
                 <p className="text-[#1C1C1E]/70 font-light">
-                  {selectedFilter === "all"
-                    ? "Bookings will appear here when guests reserve your listings."
-                    : `You don't have any ${selectedFilter} bookings.`}
+                  {selectedFilter === "underReview" && "Pending booking requests will appear here."}
+                  {selectedFilter === "today" && "Accepted bookings for today will appear here."}
+                  {selectedFilter === "upcoming" && "Future accepted bookings will appear here."}
+                  {selectedFilter === "rejected" && "Rejected or cancelled bookings will appear here."}
                 </p>
               </div>
             ) : (
@@ -598,48 +773,74 @@ const HostDashboard = () => {
 
                       {/* Details */}
                       <div className="flex-1">
-                        <div className="flex items-start justify-between mb-3">
-                          <div>
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="flex-1">
                             <Link
                               to={`/listing/${booking.listingId}`}
-                              className="text-lg sm:text-xl font-light text-[#1C1C1E] mb-1 hover:text-[#0071E3] transition-colors"
+                              className="text-lg sm:text-xl font-light text-[#1C1C1E] mb-2 hover:text-[#0071E3] transition-colors block"
                             >
                               {booking.listingTitle}
                             </Link>
-                            <p className="text-xs sm:text-sm text-[#1C1C1E]/70 font-light">
-                              {booking.listingLocation}
-                            </p>
+                            <div className="flex items-center gap-4 mb-3">
+                              <p className="text-base sm:text-lg font-light text-[#1C1C1E]">
+                                Total: <span className="font-medium">${booking.totalPrice?.toFixed(2) || "0.00"}</span>
+                              </p>
+                              <span
+                                className={`px-3 py-1 rounded-full text-xs sm:text-sm font-light capitalize ${getStatusBadge(
+                                  booking.status
+                                )}`}
+                              >
+                                {booking.status}
+                              </span>
+                            </div>
                           </div>
-                          <span
-                            className={`px-2 sm:px-3 py-1 rounded-full text-xs sm:text-sm font-light capitalize ${getStatusBadge(
-                              booking.status
-                            )}`}
-                          >
-                            {booking.status}
-                          </span>
                         </div>
 
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-4 text-sm">
-                          <div>
-                            <p className="text-[#1C1C1E]/70 font-light text-xs mb-1">Guest</p>
-                            <p className="text-[#1C1C1E] font-light">{booking.guestName || booking.guestEmail}</p>
+                        {/* Guest Information */}
+                        <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
+                          <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0">
+                            {booking.guestPhotoUrl ? (
+                              <img
+                                src={booking.guestPhotoUrl}
+                                alt={booking.guestName || "Guest"}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <span className="text-lg text-gray-500">
+                                {(booking.guestName || booking.guestEmail || "G")[0].toUpperCase()}
+                              </span>
+                            )}
                           </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm sm:text-base font-light text-[#1C1C1E] truncate">
+                              {booking.guestName || "Guest"}
+                            </p>
+                            <p className="text-xs sm:text-sm text-[#1C1C1E]/70 font-light truncate">
+                              {booking.guestEmail}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Booking Dates */}
+                        <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
                           <div>
                             <p className="text-[#1C1C1E]/70 font-light text-xs mb-1">Check-in</p>
                             <p className="text-[#1C1C1E] font-light">
-                              {new Date(booking.checkIn).toLocaleDateString()}
+                              {new Date(booking.checkIn).toLocaleDateString('en-US', { 
+                                month: 'short', 
+                                day: 'numeric', 
+                                year: 'numeric' 
+                              })}
                             </p>
                           </div>
                           <div>
                             <p className="text-[#1C1C1E]/70 font-light text-xs mb-1">Check-out</p>
                             <p className="text-[#1C1C1E] font-light">
-                              {new Date(booking.checkOut).toLocaleDateString()}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-[#1C1C1E]/70 font-light text-xs mb-1">Total</p>
-                            <p className="text-[#1C1C1E] font-light">
-                              ${booking.totalPrice?.toFixed(2) || "0.00"}
+                              {new Date(booking.checkOut).toLocaleDateString('en-US', { 
+                                month: 'short', 
+                                day: 'numeric', 
+                                year: 'numeric' 
+                              })}
                             </p>
                           </div>
                         </div>
@@ -650,29 +851,29 @@ const HostDashboard = () => {
                             to={`/chat/${booking.id}`}
                             className="relative px-4 sm:px-6 py-2 sm:py-3 bg-[#0071E3] text-white rounded-lg text-xs sm:text-sm font-light hover:bg-[#0051D0] transition-colors"
                           >
-                            Chat
+                            View
                             {unreadCounts[booking.id] > 0 && (
                               <span className="absolute -top-1 -right-1 bg-[#FF3B30] text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-medium">
                                 {(unreadCounts[booking.id] || 0) > 9 ? '9+' : unreadCounts[booking.id]}
                               </span>
                             )}
                           </Link>
-                              {booking.status === "pending" && (
-                                <>
-                                  <button
-                                    onClick={() => handleUpdateBookingStatus(booking.id, "confirmed")}
-                                    className="px-4 sm:px-6 py-2 sm:py-3 bg-[#34C759] text-white rounded-lg text-xs sm:text-sm font-light hover:bg-[#2FAE4A] transition-colors"
-                                  >
-                                    Approve
-                                  </button>
-                                  <button
-                                    onClick={() => handleUpdateBookingStatus(booking.id, "cancelled")}
-                                    className="px-4 sm:px-6 py-2 sm:py-3 bg-red-50 text-red-600 rounded-lg text-xs sm:text-sm font-light hover:bg-red-100 transition-colors"
-                                  >
-                                    Decline
-                                  </button>
-                                </>
-                              )}
+                          {booking.status === "pending" && (
+                            <>
+                              <button
+                                onClick={() => handleUpdateBookingStatus(booking.id, "confirmed")}
+                                className="px-4 sm:px-6 py-2 sm:py-3 bg-[#34C759] text-white rounded-lg text-xs sm:text-sm font-light hover:bg-[#2FAE4A] transition-colors"
+                              >
+                                Accept
+                              </button>
+                              <button
+                                onClick={() => handleUpdateBookingStatus(booking.id, "rejected")}
+                                className="px-4 sm:px-6 py-2 sm:py-3 bg-red-50 text-red-600 rounded-lg text-xs sm:text-sm font-light hover:bg-red-100 transition-colors"
+                              >
+                                Reject
+                              </button>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>

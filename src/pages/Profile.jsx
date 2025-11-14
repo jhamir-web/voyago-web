@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
-import { db } from "../firebase";
+import { doc, getDoc, collection, query, where, getDocs, updateDoc, addDoc, orderBy } from "firebase/firestore";
+import { db, auth } from "../firebase";
+import { updateProfile } from "firebase/auth";
+import { cloudinaryConfig, CLOUDINARY_UPLOAD_URL } from "../config/cloudinary";
 import Header from "../components/Header";
 
 const Profile = () => {
@@ -19,6 +21,14 @@ const Profile = () => {
     reviewsGiven: 0,
     avgRatingGiven: 0
   });
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedName, setEditedName] = useState("");
+  const [isEditingPhone, setIsEditingPhone] = useState(false);
+  const [editedPhone, setEditedPhone] = useState("");
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState(null);
+  const fileInputRef = useRef(null);
+  const [wishlistRequests, setWishlistRequests] = useState([]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -31,7 +41,15 @@ const Profile = () => {
         // Fetch user data
         const userDoc = await getDoc(doc(db, "users", currentUser.uid));
         if (userDoc.exists()) {
-          setUserData(userDoc.data());
+          const data = userDoc.data();
+          setUserData(data);
+          setEditedName(data.displayName || currentUser.displayName || currentUser.email?.split('@')[0] || 'User');
+          setEditedPhone(data.phoneNumber || data.phone || '');
+          setProfilePhotoUrl(data.photoURL || data.profilePhotoUrl || currentUser.photoURL || null);
+        } else {
+          setEditedName(currentUser.displayName || currentUser.email?.split('@')[0] || 'User');
+          setEditedPhone('');
+          setProfilePhotoUrl(currentUser.photoURL || null);
         }
 
         // Fetch bookings
@@ -83,6 +101,19 @@ const Profile = () => {
           reviewsGiven: reviewsData.length,
           avgRatingGiven: avgRating
         });
+
+        // Fetch wishlist requests
+        const requestsQuery = query(
+          collection(db, "wishlistRequests"),
+          where("guestId", "==", currentUser.uid),
+          orderBy("createdAt", "desc")
+        );
+        const requestsSnapshot = await getDocs(requestsQuery);
+        const requestsData = requestsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setWishlistRequests(requestsData);
       } catch (error) {
         console.error("Error fetching data:", error);
       } finally {
@@ -115,9 +146,139 @@ const Profile = () => {
     );
   }
 
-  const userInitials = (currentUser?.displayName || currentUser?.email || 'U')[0].toUpperCase() + 
-    (currentUser?.displayName || currentUser?.email || 'U')[1]?.toUpperCase() || '';
-  const userName = currentUser?.displayName || currentUser?.email?.split('@')[0] || 'User';
+  const handleSaveName = async () => {
+    if (!editedName.trim()) {
+      alert("Name cannot be empty");
+      return;
+    }
+
+    try {
+      // Update Firebase Auth profile
+      await updateProfile(auth.currentUser, {
+        displayName: editedName.trim()
+      });
+
+      // Update Firestore user document
+      const userRef = doc(db, "users", currentUser.uid);
+      await updateDoc(userRef, {
+        displayName: editedName.trim(),
+        updatedAt: new Date().toISOString()
+      });
+
+      setIsEditingName(false);
+      // Refresh user data
+      const userDoc = await getDoc(userRef);
+      if (userDoc.exists()) {
+        setUserData(userDoc.data());
+      }
+    } catch (error) {
+      console.error("Error updating name:", error);
+      alert("Failed to update name. Please try again.");
+    }
+  };
+
+  const handleSavePhone = async () => {
+    // Phone number is optional, so we allow empty
+    const phoneNumber = editedPhone.trim();
+
+    try {
+      // Update Firestore user document
+      const userRef = doc(db, "users", currentUser.uid);
+      await updateDoc(userRef, {
+        phoneNumber: phoneNumber || null,
+        phone: phoneNumber || null, // Also update 'phone' field for compatibility
+        updatedAt: new Date().toISOString()
+      });
+
+      setIsEditingPhone(false);
+      // Refresh user data
+      const userDoc = await getDoc(userRef);
+      if (userDoc.exists()) {
+        setUserData(userDoc.data());
+      }
+    } catch (error) {
+      console.error("Error updating phone number:", error);
+      alert("Failed to update phone number. Please try again.");
+    }
+  };
+
+
+  const handlePhotoUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      alert("Please upload an image file");
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Image size must be less than 5MB");
+      return;
+    }
+
+    try {
+      setIsUploadingPhoto(true);
+
+      // Upload to Cloudinary
+      const formDataUpload = new FormData();
+      formDataUpload.append("file", file);
+      formDataUpload.append("upload_preset", cloudinaryConfig.uploadPreset);
+      formDataUpload.append("folder", `voyago/profiles/${currentUser.uid}`);
+
+      const response = await fetch(CLOUDINARY_UPLOAD_URL, {
+        method: "POST",
+        body: formDataUpload,
+      });
+
+      if (!response.ok) {
+        throw new Error("Upload failed");
+      }
+
+      const data = await response.json();
+      const photoUrl = data.secure_url;
+
+      // Update Firebase Auth profile
+      await updateProfile(auth.currentUser, {
+        photoURL: photoUrl
+      });
+
+      // Update Firestore user document
+      const userRef = doc(db, "users", currentUser.uid);
+      await updateDoc(userRef, {
+        photoURL: photoUrl,
+        profilePhotoUrl: photoUrl,
+        updatedAt: new Date().toISOString()
+      });
+
+      setProfilePhotoUrl(photoUrl);
+      
+      // Refresh user data
+      const userDoc = await getDoc(userRef);
+      if (userDoc.exists()) {
+        setUserData(userDoc.data());
+      }
+
+      alert("Profile picture updated successfully!");
+    } catch (error) {
+      console.error("Error uploading photo:", error);
+      alert("Failed to upload photo. Please try again.");
+    } finally {
+      setIsUploadingPhoto(false);
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const userInitials = profilePhotoUrl 
+    ? '' 
+    : (editedName || currentUser?.displayName || currentUser?.email || 'U')[0].toUpperCase() + 
+      (editedName || currentUser?.displayName || currentUser?.email || 'U')[1]?.toUpperCase() || '';
+  const userName = editedName || currentUser?.displayName || currentUser?.email?.split('@')[0] || 'User';
   const userEmail = currentUser?.email || '';
   const createdAt = userData?.createdAt || currentUser?.metadata?.creationTime || '';
 
@@ -134,19 +295,140 @@ const Profile = () => {
           {/* Profile Header Card */}
           <div className="bg-white rounded-2xl sm:rounded-3xl shadow-xl p-5 sm:p-6 lg:p-8 mb-6 sm:mb-8 animate-slideDownFadeIn border border-gray-100 profile-section-card" style={{ marginBottom: '1.5rem' }}>
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6">
-              {/* Avatar */}
-              <div className="w-16 h-16 sm:w-20 sm:h-20 lg:w-24 lg:h-24 rounded-2xl bg-[#0071E3] flex items-center justify-center text-white text-2xl sm:text-3xl lg:text-4xl font-light shadow-lg flex-shrink-0">
-                {userInitials}
+              {/* Avatar with Upload */}
+              <div className="relative flex-shrink-0">
+                <div className="w-16 h-16 sm:w-20 sm:h-20 lg:w-24 lg:h-24 rounded-2xl bg-[#0071E3] flex items-center justify-center text-white text-2xl sm:text-3xl lg:text-4xl font-light shadow-lg overflow-hidden">
+                  {profilePhotoUrl ? (
+                    <img
+                      src={profilePhotoUrl}
+                      alt={userName}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    userInitials
+                  )}
+                </div>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploadingPhoto}
+                  className="absolute bottom-0 right-0 w-8 h-8 sm:w-10 sm:h-10 bg-[#0071E3] text-white rounded-full flex items-center justify-center shadow-lg hover:bg-[#0051D0] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Change profile picture"
+                >
+                  {isUploadingPhoto ? (
+                    <svg className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  )}
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handlePhotoUpload}
+                  className="hidden"
+                />
               </div>
               
               {/* User Info */}
               <div className="flex-1 w-full">
-                <h2 className="text-xl sm:text-2xl lg:text-3xl font-light text-[#1C1C1E] mb-2 sm:mb-3">
-                  {userName}
-                </h2>
-                <p className="text-sm sm:text-base text-[#1C1C1E]/70 font-light mb-3 sm:mb-4">
+                {isEditingName ? (
+                  <div className="flex items-center gap-2 mb-2 sm:mb-3">
+                    <input
+                      type="text"
+                      value={editedName}
+                      onChange={(e) => setEditedName(e.target.value)}
+                      className="text-xl sm:text-2xl lg:text-3xl font-light text-[#1C1C1E] border-2 border-[#0071E3] rounded-xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[#0071E3]/20 flex-1 max-w-md"
+                      autoFocus
+                    />
+                    <button
+                      onClick={handleSaveName}
+                      className="px-4 py-2 bg-[#0071E3] text-white rounded-xl text-sm font-medium hover:bg-[#0051D0] transition-all"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsEditingName(false);
+                        setEditedName(userName);
+                      }}
+                      className="px-4 py-2 bg-gray-100 text-[#1C1C1E] rounded-xl text-sm font-medium hover:bg-gray-200 transition-all"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3 mb-2 sm:mb-3">
+                    <h2 className="text-xl sm:text-2xl lg:text-3xl font-light text-[#1C1C1E]">
+                      {userName}
+                    </h2>
+                    <button
+                      onClick={() => setIsEditingName(true)}
+                      className="p-2 text-[#8E8E93] hover:text-[#0071E3] hover:bg-[#0071E3]/10 rounded-lg transition-all"
+                      title="Edit name"
+                    >
+                      <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
+                <p className="text-sm sm:text-base text-[#1C1C1E]/70 font-light mb-2 sm:mb-3">
                   {userEmail}
                 </p>
+                
+                {/* Phone Number */}
+                {isEditingPhone ? (
+                  <div className="flex items-center gap-2 mb-3 sm:mb-4">
+                    <input
+                      type="tel"
+                      value={editedPhone}
+                      onChange={(e) => setEditedPhone(e.target.value)}
+                      placeholder="Enter mobile number"
+                      className="text-sm sm:text-base text-[#1C1C1E] border-2 border-[#0071E3] rounded-xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[#0071E3]/20 flex-1 max-w-xs"
+                      autoFocus
+                    />
+                    <button
+                      onClick={handleSavePhone}
+                      className="px-4 py-2 bg-[#0071E3] text-white rounded-xl text-sm font-medium hover:bg-[#0051D0] transition-all"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsEditingPhone(false);
+                        setEditedPhone(userData?.phoneNumber || userData?.phone || '');
+                      }}
+                      className="px-4 py-2 bg-gray-100 text-[#1C1C1E] rounded-xl text-sm font-medium hover:bg-gray-200 transition-all"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3 mb-3 sm:mb-4">
+                    <div className="flex items-center gap-2">
+                      <svg className="w-4 h-4 text-[#8E8E93]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                      </svg>
+                      <p className="text-sm sm:text-base text-[#1C1C1E]/70 font-light">
+                        {userData?.phoneNumber || userData?.phone || 'Not provided'}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setIsEditingPhone(true)}
+                      className="p-1.5 text-[#8E8E93] hover:text-[#0071E3] hover:bg-[#0071E3]/10 rounded-lg transition-all"
+                      title="Edit phone number"
+                    >
+                      <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
                 
                 {/* Member Since & Roles */}
                 <div className="flex flex-wrap items-center gap-3 sm:gap-4">
@@ -193,7 +475,7 @@ const Profile = () => {
                             setUserRole(role);
                             // Navigate based on role
                             if (role === "host") {
-                              navigate("/host/dashboard");
+                              navigate("/host/listings");
                             } else {
                               navigate("/guest/dashboard");
                             }
@@ -246,6 +528,9 @@ const Profile = () => {
             </button>
           </div>
 
+          {/* Tab Content */}
+          {activeTab === "overview" && (
+            <>
           {/* Statistics Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 profile-stats-section" style={{ gap: '0.75rem' }}>
             {/* Total Bookings */}
@@ -390,6 +675,78 @@ const Profile = () => {
               </div>
             </div>
           </div>
+            </>
+          )}
+
+          {activeTab === "wishlist" && (
+            <div className="space-y-6">
+              {/* Header */}
+              <div>
+                <h2 className="text-xl sm:text-2xl lg:text-3xl font-light text-[#1C1C1E] mb-2">
+                  Improvement Requests
+                </h2>
+                <p className="text-sm sm:text-base text-[#8E8E93] font-light">
+                  View your improvement requests submitted to hosts. Create new requests from your past bookings in the My Bookings page.
+                </p>
+              </div>
+
+              {/* Requests List */}
+              <div className="bg-white rounded-2xl sm:rounded-3xl shadow-xl border border-gray-100 p-6">
+                <h3 className="text-lg sm:text-xl font-light text-[#1C1C1E] mb-4">Your Requests</h3>
+                {wishlistRequests.length > 0 ? (
+                  <div className="space-y-4">
+                    {wishlistRequests.map((request) => (
+                      <div
+                        key={request.id}
+                        className="p-4 rounded-xl bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-all"
+                      >
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <h4 className="text-base sm:text-lg font-medium text-[#1C1C1E]">
+                                {request.title}
+                              </h4>
+                              <span className="px-2.5 py-1 rounded-md text-xs font-medium bg-[#0071E3]/10 text-[#0071E3]">
+                                {request.category}
+                              </span>
+                              <span className={`px-2.5 py-1 rounded-md text-xs font-medium ${
+                                request.status === "pending" ? "bg-yellow-100 text-yellow-700" :
+                                request.status === "reviewed" ? "bg-blue-100 text-blue-700" :
+                                "bg-green-100 text-green-700"
+                              }`}>
+                                {request.status}
+                              </span>
+                            </div>
+                            <p className="text-sm text-[#8E8E93] font-light mb-2">
+                              {request.listingTitle} - {request.listingLocation}
+                            </p>
+                            <p className="text-sm text-[#1C1C1E] font-light">
+                              {request.description}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4 text-xs text-[#8E8E93] font-light">
+                          <span>Submitted: {formatDate(request.createdAt)}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <svg className="w-16 h-16 mx-auto text-[#8E8E93] mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                    </svg>
+                    <p className="text-base sm:text-lg text-[#8E8E93] font-light">
+                      No improvement requests yet
+                    </p>
+                    <p className="text-sm text-[#8E8E93] font-light mt-2">
+                      Create your first request to help hosts improve their listings
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

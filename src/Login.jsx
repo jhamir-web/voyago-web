@@ -3,7 +3,6 @@ import { signInWithEmailAndPassword, signInWithPopup, sendEmailVerification, sig
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { auth, googleProvider, db } from "./firebase";
 import { useNavigate, Link, useLocation } from "react-router-dom";
-import { useAuth } from "./contexts/AuthContext";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -16,9 +15,11 @@ const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Check for message and returnTo from navigation
   useEffect(() => {
     if (location.state?.message) {
       setInfo(location.state.message);
+      // Clear the state so it doesn't show again on refresh
       window.history.replaceState({}, document.title);
     }
   }, [location]);
@@ -29,6 +30,7 @@ const Login = () => {
     setInfo("");
     setLoading(true);
 
+    // Basic validation
     if (!email || !password) {
       setError("Please enter both email and password.");
       setLoading(false);
@@ -36,15 +38,27 @@ const Login = () => {
     }
 
     try {
+      // CRITICAL: signInWithEmailAndPassword should NEVER create accounts
+      // If it succeeds, the user MUST already exist in Firebase Auth
       console.log("Attempting to sign in with email:", email);
+      console.log("This should FAIL if user doesn't exist...");
       
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
       
       console.log("✓ Login successful for user:", user.email);
+      console.log("User UID:", user.uid);
+      console.log("Email verified:", user.emailVerified);
+      console.log("Provider:", user.providerData[0]?.providerId);
+      console.log("Account created at:", user.metadata.creationTime);
+      console.log("Last sign in:", user.metadata.lastSignInTime);
       
+      // CRITICAL CHECK: Verify user exists in Firestore
+      // If user doesn't exist in Firestore, they didn't sign up properly
+      // This check is MANDATORY - we cannot allow login without Firestore verification
       let userDoc;
       try {
+        // Add timeout to prevent hanging
         const timeoutPromise = new Promise((_, reject) => 
           setTimeout(() => reject(new Error("Firestore check timed out")), 10000)
         );
@@ -54,28 +68,37 @@ const Login = () => {
           timeoutPromise
         ]);
         
+        // If Firestore is offline, we MUST reject login for security
         if (!userDoc.exists()) {
           console.error("⚠ SECURITY: User exists in Auth but NOT in Firestore!");
           await signOut(auth);
-          setError("❌ Account not found. Please sign up first.");
+          setError("❌ Account not found. Please sign up first. This account was not created through our registration process.");
           setLoading(false);
           return;
         }
       } catch (firestoreError) {
+        // If Firestore check fails (offline, timeout, or error), we MUST reject login
         console.error("⚠ SECURITY: Cannot verify account in Firestore:", firestoreError);
         await signOut(auth);
         if (firestoreError.message?.includes("timed out")) {
           setError("❌ Verification timed out. Please check your internet connection and try again.");
         } else {
-          setError("❌ Cannot verify account. Please check your internet connection and try again.");
+          setError("❌ Cannot verify account. Please check your internet connection and try again, or sign up first.");
         }
         setLoading(false);
         return;
       }
       
+      // userDoc.exists() is already checked above, so we can proceed
       const userData = userDoc.data();
       console.log("✓ User found in Firestore:", userData);
       
+      // Check if it was previously an orphaned account
+      if (userData.fixedOrphanedAccount) {
+        console.warn("⚠ This account was previously fixed from being orphaned.");
+      }
+      
+      // Verify the account was created through signup (has provider field)
       if (!userData.provider || (userData.provider !== "email" && userData.provider !== "google")) {
         console.warn("⚠ User account missing provider information");
         await signOut(auth);
@@ -84,39 +107,49 @@ const Login = () => {
         return;
       }
       
-      if (!user.emailVerified) {
+      // Check if email is verified (using EmailJS verification stored in Firestore)
+      // We check userData.emailVerified from Firestore, not Firebase Auth's emailVerified
+      // because we're using EmailJS for verification, not Firebase's built-in system
+      const isEmailVerified = userData.emailVerified === true;
+      
+      if (!isEmailVerified) {
         console.warn("Email not verified for user:", user.email);
+        setInfo("Please verify your email before signing in. Check your inbox for the verification email.");
         await signOut(auth);
-        setError("❌ Please verify your email before signing in. Check your inbox (and spam folder) for the verification email and click the verification link.");
-        setInfo("");
         setLoading(false);
         return;
       }
       
-      console.log("✓ All security checks passed. Email verified. Navigating...");
-      const returnTo = location.state?.returnTo || "/";
-      setLoading(false);
+      console.log("✓ All security checks passed. Navigating...");
       
-      // Small delay to ensure state is updated before navigation
-      setTimeout(() => {
-        navigate(returnTo, { replace: true });
-      }, 50);
+      // Check if user is admin and redirect accordingly
+      const userRoles = userData.roles || (userData.role ? [userData.role] : []);
+      const isAdmin = userRoles.includes("admin");
+      
+      // Redirect to returnTo path if provided, otherwise check role
+      let redirectPath = location.state?.returnTo;
+      
+      if (!redirectPath) {
+        if (isAdmin) {
+          redirectPath = "/admin";
+        } else {
+          redirectPath = "/";
+        }
+      }
+      
+      navigate(redirectPath);
     } catch (err) {
+      // This catch block handles ALL errors from signInWithEmailAndPassword
       console.error("✗ Login FAILED");
       console.error("Error code:", err.code);
       console.error("Error message:", err.message);
+      console.error("Full error:", err);
       
-      // Ensure we're signed out on error
-      try {
-        await signOut(auth);
-      } catch (signOutError) {
-        console.warn("Error signing out:", signOutError);
-      }
-      
-      // Set appropriate error message
+      // Firebase error codes for non-existent users
       if (err.code === "auth/user-not-found") {
         setError("❌ No account found with this email. Please sign up first.");
       } else if (err.code === "auth/invalid-credential") {
+        // This can mean wrong password OR user doesn't exist (Firebase changed error codes)
         setError("❌ Invalid email or password. If you don't have an account, please sign up first.");
       } else if (err.code === "auth/wrong-password") {
         setError("❌ Incorrect password. Please try again.");
@@ -127,13 +160,11 @@ const Login = () => {
       } else if (err.code === "auth/network-request-failed") {
         setError("❌ Network error. Please check your connection and try again.");
       } else {
+        // Show the actual error message for debugging
         setError(`❌ Failed to sign in: ${err.message || err.code || "Unknown error"}`);
       }
-      
-      setInfo(""); // Clear any info messages
+    } finally {
       setLoading(false);
-      
-      // Don't redirect on error - stay on login page to show error
     }
   };
 
@@ -148,6 +179,7 @@ const Login = () => {
     setInfo("");
 
     try {
+      // Try to sign in temporarily to get the user, then sign out
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
       
@@ -158,13 +190,7 @@ const Login = () => {
         return;
       }
 
-      // Configure email verification with custom redirect
-      const actionCodeSettings = {
-        url: `${window.location.origin}/verify-email`,
-        handleCodeInApp: true,
-      };
-
-      await sendEmailVerification(user, actionCodeSettings);
+      await sendEmailVerification(user);
       await signOut(auth);
       setInfo("Verification email sent! Please check your inbox.");
     } catch (err) {
@@ -190,7 +216,10 @@ const Login = () => {
       const user = result.user;
 
       console.log("Google sign-in - emailVerified status:", user.emailVerified);
+      console.log("Google sign-in - User UID:", user.uid);
 
+      // CRITICAL: Check if user exists in Firestore
+      // Google sign-in auto-creates accounts, but we need to verify they signed up through our system
       let userDoc;
       try {
         const timeoutPromise = new Promise((_, reject) => 
@@ -213,10 +242,12 @@ const Login = () => {
         return;
       }
 
+      // If user doesn't exist in Firestore, they haven't signed up through our system
       if (!userDoc.exists()) {
         console.error("⚠ SECURITY: User exists in Auth but NOT in Firestore!");
+        console.error("This Google account has not been registered through our signup process.");
         await signOut(auth);
-        setError("❌ This account is not registered. Please sign up first.");
+        setError("❌ This account is not registered. Please sign up first using the 'Sign Up' page.");
         setGoogleLoading(false);
         return;
       }
@@ -224,6 +255,7 @@ const Login = () => {
       const userData = userDoc.data();
       console.log("✓ User found in Firestore:", userData);
 
+      // Verify the account was created through signup (has provider field)
       if (!userData.provider || userData.provider !== "google") {
         console.warn("⚠ User account provider mismatch");
         await signOut(auth);
@@ -232,40 +264,58 @@ const Login = () => {
         return;
       }
 
+      // Google accounts are always verified, so we skip this check
+      // But we'll still check if emailVerified is true for consistency
       if (!user.emailVerified) {
-        console.warn("⚠ Google account shows as unverified (unusual). Proceeding anyway.");
+        console.warn("⚠ Google account shows as unverified (unusual). Proceeding anyway since Google accounts are always verified.");
+        // Don't sign out - Google accounts should be verified
       }
 
+      // Only navigate if email is verified and user exists in Firestore
       console.log("✓ Google account verified and registered. Allowing access...");
       
+      // Update emailVerified status in Firestore if it changed (user already exists, just updating)
       try {
         await setDoc(doc(db, "users", user.uid), {
           emailVerified: user.emailVerified,
         }, { merge: true });
         console.log("✓ Firestore updated successfully");
       } catch (updateError) {
+        // Non-critical - just log it
         console.warn("Could not update emailVerified status:", updateError);
       }
       
-      console.log("✓ Google account verified and registered. Navigating...");
+      // Check if user is admin and redirect accordingly
+      const userRoles = userData.roles || (userData.role ? [userData.role] : []);
+      const isAdmin = userRoles.includes("admin");
       
-      // Clear loading state first
+      // Redirect to returnTo path if provided, otherwise check role
+      let redirectPath = location.state?.returnTo;
+      
+      if (!redirectPath) {
+        if (isAdmin) {
+          redirectPath = "/admin";
+        } else {
+          redirectPath = "/";
+        }
+      }
+      
       setGoogleLoading(false);
-      
-      // Navigate to homepage using React Router
-      const returnTo = location.state?.returnTo || "/";
-      navigate(returnTo, { replace: true });
+      console.log("✓ Google account verified and registered. Navigating...");
+      navigate(redirectPath);
     } catch (err) {
       console.error("Google sign-in error:", err);
+      console.error("Error code:", err.code);
+      console.error("Error message:", err.message);
       
       if (err.code === "auth/popup-closed-by-user") {
         setError("Sign-in was cancelled.");
       } else if (err.code === "auth/popup-blocked") {
         setError("Popup was blocked. Please allow popups and try again.");
       } else if (err.code === "auth/operation-not-allowed") {
-        setError("Google authentication is not enabled.");
+        setError("Google authentication is not enabled. Please enable it in Firebase Console.");
       } else if (err.code === "auth/unauthorized-domain") {
-        setError("This domain is not authorized.");
+        setError("This domain is not authorized. Please add localhost to authorized domains in Firebase.");
       } else {
         setError(`Failed to sign in with Google: ${err.message || err.code || "Unknown error"}`);
       }
@@ -296,7 +346,6 @@ const Login = () => {
       {/* Main Content */}
       <div className="flex-1 flex items-center justify-center px-4 sm:px-6 py-8 sm:py-12 lg:py-16">
         <div className="w-full max-w-md animate-fadeInUp">
-          {/* Entire Card Container */}
           <div className="login-signup-card bg-white rounded-3xl shadow-2xl shadow-black/10 border border-gray-200/50 p-8 sm:p-10 lg:p-12 backdrop-blur-sm">
             {/* Logo/Icon Section */}
             <div className="text-center mb-8 sm:mb-10">
@@ -309,7 +358,7 @@ const Login = () => {
                 Welcome back
               </h1>
               <p className="text-base sm:text-lg text-[#8E8E93] font-light">
-                Sign in to continue your journey
+                Sign in to your Voyago account
               </p>
             </div>
 
@@ -319,15 +368,20 @@ const Login = () => {
                 <label className="block text-xs font-semibold text-[#1C1C1E] uppercase tracking-wider">
                   Email Address
                 </label>
-                <div className="relative group">
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 sm:pl-4 flex items-center pointer-events-none">
+                    <svg className="w-4 h-4 sm:w-5 sm:h-5 text-[#8E8E93]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                  </div>
                   <input
                     type="email"
-                    className="w-full px-3.5 py-2.5 sm:py-3 text-sm sm:text-base border-2 border-gray-200 rounded-xl focus:outline-none focus:border-[#0071E3] focus:ring-4 focus:ring-[#0071E3]/10 bg-[#F5F5F7] text-[#1C1C1E] font-light transition-all duration-300 group-hover:border-gray-300"
-                    placeholder="name@example.com"
+                    className="w-full pl-10 sm:pl-12 pr-3.5 sm:pr-4 py-2.5 sm:py-3 text-sm sm:text-base border-2 border-gray-200 rounded-xl focus:outline-none focus:border-[#0071E3] focus:ring-4 focus:ring-[#0071E3]/10 bg-[#F5F5F7] text-[#1C1C1E] font-light transition-all duration-300 hover:border-gray-300"
+                    placeholder="Enter your email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
-                    disabled={loading}
+                    disabled={loading || googleLoading}
                   />
                 </div>
               </div>
@@ -336,45 +390,39 @@ const Login = () => {
                 <label className="block text-xs font-semibold text-[#1C1C1E] uppercase tracking-wider">
                   Password
                 </label>
-                <div className="relative group">
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 sm:pl-4 flex items-center pointer-events-none">
+                    <svg className="w-4 h-4 sm:w-5 sm:h-5 text-[#8E8E93]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                  </div>
                   <input
                     type="password"
-                    className="w-full px-3.5 py-2.5 sm:py-3 text-sm sm:text-base border-2 border-gray-200 rounded-xl focus:outline-none focus:border-[#0071E3] focus:ring-4 focus:ring-[#0071E3]/10 bg-[#F5F5F7] text-[#1C1C1E] font-light transition-all duration-300 group-hover:border-gray-300"
+                    className="w-full pl-10 sm:pl-12 pr-3.5 sm:pr-4 py-2.5 sm:py-3 text-sm sm:text-base border-2 border-gray-200 rounded-xl focus:outline-none focus:border-[#0071E3] focus:ring-4 focus:ring-[#0071E3]/10 bg-[#F5F5F7] text-[#1C1C1E] font-light transition-all duration-300 hover:border-gray-300"
                     placeholder="Enter your password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    disabled={loading}
+                    disabled={loading || googleLoading}
                   />
                 </div>
               </div>
 
               {error && (
-                <div className="p-3 sm:p-4 bg-red-50 text-red-600 rounded-xl text-xs sm:text-sm font-light border-2 border-red-100 animate-fadeIn">
-                  <div className="text-xs sm:text-sm">{error}</div>
-                  {error.includes("verify your email") && (
-                    <div className="mt-2 sm:mt-3">
-                      <button
-                        onClick={handleResendVerification}
-                        disabled={resending || !email || !password}
-                        className="text-red-600 hover:text-red-800 underline text-xs sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed font-medium"
-                      >
-                        {resending ? "Sending..." : "Resend verification email"}
-                      </button>
-                    </div>
-                  )}
+                <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 font-light">
+                  {error}
                 </div>
               )}
 
               {info && (
-                <div className="p-3 sm:p-4 bg-blue-50 text-blue-600 rounded-xl text-xs sm:text-sm font-light border-2 border-blue-100 animate-fadeIn">
-                  <div className="text-xs sm:text-sm">{info}</div>
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-600 font-light">
+                  <div className="text-sm sm:text-base">{info}</div>
                   {info.includes("verify your email") && (
-                    <div className="mt-2 sm:mt-3">
+                    <div className="mt-3">
                       <button
                         onClick={handleResendVerification}
                         disabled={resending || !email || !password}
-                        className="text-blue-600 hover:text-blue-800 underline text-xs sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="text-blue-600 hover:text-blue-800 underline text-sm disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                       >
                         {resending ? "Sending..." : "Resend verification email"}
                       </button>
@@ -385,7 +433,7 @@ const Login = () => {
 
               <button
                 type="submit"
-                disabled={loading || !email || !password}
+                disabled={loading || googleLoading || !email || !password}
                 className="w-full bg-[#0071E3] text-white py-3 sm:py-3.5 rounded-xl text-sm sm:text-base font-semibold hover:bg-[#0051D0] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-[#0071E3]/20 hover:shadow-xl hover:shadow-[#0071E3]/30 hover:scale-[1.02] active:scale-[0.98]"
               >
                 {loading ? (
@@ -414,9 +462,10 @@ const Login = () => {
 
             {/* Google Button */}
             <button
+              type="button"
               onClick={handleGoogleSignIn}
               disabled={loading || googleLoading}
-              className="w-full flex items-center justify-center gap-3 bg-white border-2 border-gray-200 text-[#1C1C1E] py-3 sm:py-3.5 rounded-xl text-sm sm:text-base font-medium hover:bg-[#F5F5F7] hover:border-gray-300 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md hover:scale-[1.02] active:scale-[0.98]"
+              className="w-full flex items-center justify-center gap-3 bg-white border-2 border-gray-200 text-[#1C1C1E] py-3 sm:py-3.5 rounded-xl text-sm sm:text-base font-medium hover:bg-[#F5F5F7] hover:border-gray-300 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md hover:scale-[1.02] active:scale-[0.98] mb-3"
             >
               {googleLoading ? (
                 <>

@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { db } from "../../firebase";
 import { cloudinaryConfig, CLOUDINARY_UPLOAD_URL } from "../../config/cloudinary";
+import { GoogleMap, LoadScript, Marker } from "@react-google-maps/api";
+import { GOOGLE_MAPS_API_KEY } from "../../config/googlemaps";
 
 const EditListing = () => {
   const { currentUser } = useAuth();
@@ -27,6 +29,11 @@ const EditListing = () => {
   const [image, setImage] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
   const [currentImageUrl, setCurrentImageUrl] = useState("");
+  const [coordinates, setCoordinates] = useState({ lat: null, lng: null });
+  const [mapCenter, setMapCenter] = useState({ lat: 14.5995, lng: 120.9842 }); // Default to Manila
+  const [mapLoaded, setMapLoaded] = useState(false);
+  const mapRef = useRef(null);
+  const [hasChanges, setHasChanges] = useState(false);
 
   useEffect(() => {
     if (!currentUser || !id) return;
@@ -63,6 +70,15 @@ const EditListing = () => {
         if (data.imageUrl) {
           setCurrentImageUrl(data.imageUrl);
         }
+
+        // Load coordinates if they exist
+        if (data.latitude && data.longitude) {
+          setCoordinates({ lat: data.latitude, lng: data.longitude });
+          setMapCenter({ lat: data.latitude, lng: data.longitude });
+        } else if (data.location) {
+          // Store location for geocoding after map loads
+          setMapCenter({ lat: 14.5995, lng: 120.9842 }); // Default center
+        }
       } catch (error) {
         console.error("Error fetching listing:", error);
         setError("Failed to load listing");
@@ -73,6 +89,34 @@ const EditListing = () => {
 
     fetchListing();
   }, [id, currentUser, navigate]);
+
+  // Get user's location for map center if no coordinates
+  useEffect(() => {
+    if (!coordinates.lat && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setMapCenter({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          });
+        },
+        () => {
+          console.log("Geolocation not available, using default location");
+        }
+      );
+    }
+  }, []);
+
+  // Track form changes
+  useEffect(() => {
+    const hasData = formData.title.trim() || 
+                   formData.description.trim() || 
+                   formData.location.trim() || 
+                   formData.price || 
+                   image !== null ||
+                   coordinates.lat !== null;
+    setHasChanges(hasData);
+  }, [formData, image, coordinates]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -105,6 +149,7 @@ const EditListing = () => {
       reader.readAsDataURL(file);
     }
   };
+
 
   const handleSaveDraft = async () => {
     setError("");
@@ -144,6 +189,8 @@ const EditListing = () => {
         category: formData.category,
         maxGuests: formData.maxGuests ? parseInt(formData.maxGuests) : 1,
         imageUrl: imageUrl,
+        latitude: coordinates.lat || null,
+        longitude: coordinates.lng || null,
         updatedAt: new Date().toISOString(),
         status: "draft",
       });
@@ -158,6 +205,11 @@ const EditListing = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  // Handle cancel without auto-save
+  const handleCancel = () => {
+    navigate("/host/listings");
   };
 
   const handlePublish = async () => {
@@ -235,6 +287,8 @@ const EditListing = () => {
         category: formData.category,
         maxGuests: parseInt(formData.maxGuests) || 1,
         imageUrl: imageUrl,
+        latitude: coordinates.lat || null,
+        longitude: coordinates.lng || null,
         updatedAt: new Date().toISOString(),
         status: "active",
       });
@@ -354,15 +408,148 @@ const EditListing = () => {
             <label className="block text-xs sm:text-sm font-light text-[#1C1C1E] mb-2">
               Location *
             </label>
-            <input
-              type="text"
-              name="location"
-              value={formData.location}
-              onChange={handleChange}
-              className="w-full px-3 sm:px-4 py-2.5 sm:py-3 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:border-[#0071E3] bg-white text-[#1C1C1E] font-light transition-colors"
-              placeholder="e.g., New York, NY, USA"
-              disabled={saving || publishing}
-            />
+            <div className="flex gap-2 mb-3">
+              <input
+                type="text"
+                name="location"
+                value={formData.location}
+                onChange={handleChange}
+                onBlur={async () => {
+                  // Geocode address to coordinates when user leaves the field
+                  if (formData.location.trim() && mapLoaded) {
+                    const geocoder = new window.google.maps.Geocoder();
+                    geocoder.geocode({ address: formData.location }, (results, status) => {
+                      if (status === "OK" && results[0]) {
+                        const location = results[0].geometry.location;
+                        const lat = location.lat();
+                        const lng = location.lng();
+                        setCoordinates({ lat, lng });
+                        setMapCenter({ lat, lng });
+                        if (mapRef.current) {
+                          mapRef.current.setCenter({ lat, lng });
+                          mapRef.current.setZoom(15);
+                        }
+                      }
+                    });
+                  }
+                }}
+                className="flex-1 px-3 sm:px-4 py-2.5 sm:py-3 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:border-[#0071E3] bg-white text-[#1C1C1E] font-light transition-colors"
+                placeholder="e.g., New York, NY, USA"
+                disabled={saving || publishing}
+              />
+              <button
+                type="button"
+                onClick={async () => {
+                  if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(
+                      (position) => {
+                        const lat = position.coords.latitude;
+                        const lng = position.coords.longitude;
+                        setCoordinates({ lat, lng });
+                        setMapCenter({ lat, lng });
+                        if (mapRef.current) {
+                          mapRef.current.setCenter({ lat, lng });
+                          mapRef.current.setZoom(15);
+                        }
+                        // Reverse geocode
+                        const geocoder = new window.google.maps.Geocoder();
+                        geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+                          if (status === "OK" && results[0]) {
+                            setFormData(prev => ({ ...prev, location: results[0].formatted_address }));
+                          }
+                        });
+                      },
+                      () => {
+                        setError("Unable to get your location. Please enter it manually.");
+                      }
+                    );
+                  }
+                }}
+                className="px-4 py-2.5 sm:py-3 bg-[#0071E3] text-white rounded-lg text-sm font-medium hover:bg-[#0051D0] transition-colors disabled:opacity-50"
+                disabled={saving || publishing || !mapLoaded}
+                title="Use my current location"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </button>
+            </div>
+            <div className="w-full h-64 rounded-lg overflow-hidden border-2 border-gray-300 mb-2">
+              <LoadScript googleMapsApiKey={GOOGLE_MAPS_API_KEY} libraries={["places", "geometry"]}>
+                <GoogleMap
+                  mapContainerStyle={{ width: "100%", height: "100%" }}
+                  center={coordinates.lat ? { lat: coordinates.lat, lng: coordinates.lng } : mapCenter}
+                  zoom={coordinates.lat ? 15 : 10}
+                  onClick={(e) => {
+                    if (e.latLng) {
+                      const lat = e.latLng.lat();
+                      const lng = e.latLng.lng();
+                      setCoordinates({ lat, lng });
+                      setMapCenter({ lat, lng });
+                      // Reverse geocode to get address
+                      const geocoder = new window.google.maps.Geocoder();
+                      geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+                        if (status === "OK" && results[0]) {
+                          setFormData(prev => ({ ...prev, location: results[0].formatted_address }));
+                        }
+                      });
+                    }
+                  }}
+                  onLoad={(map) => {
+                    mapRef.current = map;
+                    setMapLoaded(true);
+                    // Geocode existing location if coordinates don't exist
+                    if (!coordinates.lat && formData.location) {
+                      const geocoder = new window.google.maps.Geocoder();
+                      geocoder.geocode({ address: formData.location }, (results, status) => {
+                        if (status === "OK" && results[0]) {
+                          const location = results[0].geometry.location;
+                          const lat = location.lat();
+                          const lng = location.lng();
+                          setCoordinates({ lat, lng });
+                          setMapCenter({ lat, lng });
+                          map.setCenter({ lat, lng });
+                          map.setZoom(15);
+                        }
+                      });
+                    }
+                  }}
+                  options={{
+                    disableDefaultUI: false,
+                    zoomControl: true,
+                    streetViewControl: false,
+                    mapTypeControl: false,
+                    fullscreenControl: true,
+                  }}
+                >
+                  {coordinates.lat && coordinates.lng && (
+                    <Marker
+                      position={{ lat: coordinates.lat, lng: coordinates.lng }}
+                      draggable={true}
+                      onDragEnd={(e) => {
+                        if (e.latLng) {
+                          const lat = e.latLng.lat();
+                          const lng = e.latLng.lng();
+                          setCoordinates({ lat, lng });
+                          setMapCenter({ lat, lng });
+                          // Reverse geocode to get address
+                          const geocoder = new window.google.maps.Geocoder();
+                          geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+                            if (status === "OK" && results[0]) {
+                              setFormData(prev => ({ ...prev, location: results[0].formatted_address }));
+                            }
+                          });
+                        }
+                      }}
+                    />
+                  )}
+                </GoogleMap>
+              </LoadScript>
+            </div>
+            <p className="text-xs text-[#1C1C1E]/50 font-light">
+              Click on the map to pin your location, drag the marker to adjust, or enter an address above
+            </p>
           </div>
 
           {/* Price */}
@@ -462,8 +649,8 @@ const EditListing = () => {
           <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 pt-4">
             <button
               type="button"
-              onClick={() => navigate("/host/listings")}
-              className="flex-1 sm:flex-none px-6 sm:px-8 py-3 sm:py-4 bg-white border-2 border-gray-200 text-[#1C1C1E] rounded-2xl text-sm sm:text-base font-light hover:border-gray-300 hover:bg-gray-50 transition-all duration-300 shadow-sm hover:shadow-md"
+              onClick={handleCancel}
+              className="flex-1 sm:flex-none px-6 sm:px-8 py-3 sm:py-4 bg-white border-2 border-gray-200 text-[#1C1C1E] rounded-2xl text-sm sm:text-base font-light hover:border-gray-300 hover:bg-gray-50 transition-all duration-300 shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={saving || publishing}
             >
               Cancel

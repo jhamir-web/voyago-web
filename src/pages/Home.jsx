@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { signOut } from "firebase/auth";
 import { auth, db } from "../firebase";
-import { collection, getDocs, query, where, orderBy, doc, addDoc, deleteDoc, onSnapshot } from "firebase/firestore";
+import { collection, getDocs, query, where, orderBy, doc, addDoc, deleteDoc, onSnapshot, getDoc } from "firebase/firestore";
 import { HERO_VIDEO_URL, getCloudinaryVideoUrl, cloudinaryConfig } from "../config/cloudinary";
 import Header from "../components/Header";
 import HostHomePage from "./host/HostHomePage";
@@ -222,7 +222,15 @@ const ListingCard = ({ listing, currentUser }) => {
             <span className="text-base sm:text-lg md:text-xl font-light text-[#1C1C1E]">
               ${listing.price}
             </span>
-            <span className="text-xs sm:text-sm text-[#1C1C1E]/60 font-light">night</span>
+            <span className="text-xs sm:text-sm text-[#1C1C1E]/60 font-light">
+              {listing.activityType 
+                ? "person" 
+                : listing.serviceType 
+                ? "service" 
+                : listing.placeType || listing.subcategory || listing.category === "place" || (listing.category && !listing.activityType && !listing.serviceType)
+                ? "night" 
+                : "person"}
+            </span>
           </div>
         </div>
       </div>
@@ -394,6 +402,8 @@ const Home = () => {
   const [checkOut, setCheckOut] = useState("");
   const [guests, setGuests] = useState(1);
   const [showGuestMenu, setShowGuestMenu] = useState(false);
+  const [recommendedListings, setRecommendedListings] = useState([]);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
 
   // Format date for display
   const formatDateDisplay = (dateString) => {
@@ -457,6 +467,269 @@ const Home = () => {
     };
   }, [filteredListings]);
 
+  // Fetch and calculate recommendations based on booking history
+  useEffect(() => {
+    const fetchRecommendations = async () => {
+      if (!currentUser || userRole !== "guest") {
+        setRecommendedListings([]);
+        return;
+      }
+
+      try {
+        setRecommendationsLoading(true);
+        
+        // Fetch guest's previous bookings
+        const bookingsQuery = query(
+          collection(db, "bookings"),
+          where("guestId", "==", currentUser.uid),
+          where("status", "in", ["confirmed", "completed"])
+        );
+        const bookingsSnapshot = await getDocs(bookingsQuery);
+        
+        if (bookingsSnapshot.empty) {
+          setRecommendedListings([]);
+          setRecommendationsLoading(false);
+          return;
+        }
+
+        const bookings = bookingsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        // Extract preferences from bookings
+        const preferences = {
+          categories: {}, // place, service, experience
+          subcategories: {}, // resort, hotel, transient (for places)
+          placeTypes: {}, // House, Cabin, Apartment, etc.
+          serviceTypes: {}, // Photography, Catering, etc.
+          activityTypes: {}, // Hiking, Food Tour, etc.
+          locations: {},
+          priceRange: { min: Infinity, max: 0, avg: 0 },
+          amenities: new Set(),
+          services: new Set(),
+          bookedListingIds: new Set()
+        };
+
+        let totalPrice = 0;
+        let priceCount = 0;
+
+        bookings.forEach(booking => {
+          // Track booked listings to exclude from recommendations
+          if (booking.listingId) {
+            preferences.bookedListingIds.add(booking.listingId);
+          }
+
+          // Get listing details to extract preferences
+          // We'll fetch listing data for each booking
+        });
+
+        // Fetch listing details for each booking to get preferences
+        const listingPromises = bookings.map(async (booking) => {
+          if (!booking.listingId) return null;
+          try {
+            const listingDoc = await getDoc(doc(db, "listings", booking.listingId));
+            if (listingDoc.exists()) {
+              return { id: listingDoc.id, ...listingDoc.data() };
+            }
+          } catch (error) {
+            console.error("Error fetching listing:", error);
+          }
+          return null;
+        });
+
+        const listingData = await Promise.all(listingPromises);
+        const validListings = listingData.filter(l => l !== null);
+
+        // Analyze preferences from listings
+        validListings.forEach(listing => {
+          // Main category preferences (place, service, experience)
+          if (listing.category) {
+            preferences.categories[listing.category] = (preferences.categories[listing.category] || 0) + 1;
+          }
+
+          // Subcategory preferences (resort, hotel, transient for places)
+          if (listing.subcategory) {
+            preferences.subcategories[listing.subcategory] = (preferences.subcategories[listing.subcategory] || 0) + 1;
+          }
+
+          // Place type preferences (House, Cabin, Apartment, etc.)
+          if (listing.placeType) {
+            preferences.placeTypes[listing.placeType] = (preferences.placeTypes[listing.placeType] || 0) + 1;
+          }
+
+          // Service type preferences (Photography, Catering, etc.)
+          if (listing.serviceType) {
+            preferences.serviceTypes[listing.serviceType] = (preferences.serviceTypes[listing.serviceType] || 0) + 1;
+          }
+
+          // Activity type preferences (Hiking, Food Tour, etc.)
+          if (listing.activityType) {
+            preferences.activityTypes[listing.activityType] = (preferences.activityTypes[listing.activityType] || 0) + 1;
+          }
+
+          // Location preferences (extract city/province from location)
+          if (listing.location) {
+            const locationParts = listing.location.split(',').map(s => s.trim());
+            locationParts.forEach(part => {
+              preferences.locations[part] = (preferences.locations[part] || 0) + 1;
+            });
+          }
+
+          // Price range
+          if (listing.price) {
+            const price = parseFloat(listing.price);
+            if (price > 0) {
+              preferences.priceRange.min = Math.min(preferences.priceRange.min, price);
+              preferences.priceRange.max = Math.max(preferences.priceRange.max, price);
+              totalPrice += price;
+              priceCount++;
+            }
+          }
+
+          // Amenities
+          if (listing.amenities && Array.isArray(listing.amenities)) {
+            listing.amenities.forEach(amenity => preferences.amenities.add(amenity));
+          }
+
+          // Services
+          if (listing.services && Array.isArray(listing.services)) {
+            listing.services.forEach(service => preferences.services.add(service));
+          }
+        });
+
+        // Calculate average price
+        if (priceCount > 0) {
+          preferences.priceRange.avg = totalPrice / priceCount;
+        }
+
+        // Find most preferred category
+        const topCategory = Object.keys(preferences.categories).length > 0
+          ? Object.keys(preferences.categories).reduce((a, b) => 
+              preferences.categories[a] > preferences.categories[b] ? a : b
+            )
+          : null;
+
+        // Find most preferred subcategory
+        const topSubcategory = Object.keys(preferences.subcategories).length > 0
+          ? Object.keys(preferences.subcategories).reduce((a, b) => 
+              preferences.subcategories[a] > preferences.subcategories[b] ? a : b
+            )
+          : null;
+
+        // Find most preferred place type
+        const topPlaceType = Object.keys(preferences.placeTypes).length > 0
+          ? Object.keys(preferences.placeTypes).reduce((a, b) => 
+              preferences.placeTypes[a] > preferences.placeTypes[b] ? a : b
+            )
+          : null;
+
+        // Find most preferred service type
+        const topServiceType = Object.keys(preferences.serviceTypes).length > 0
+          ? Object.keys(preferences.serviceTypes).reduce((a, b) => 
+              preferences.serviceTypes[a] > preferences.serviceTypes[b] ? a : b
+            )
+          : null;
+
+        // Find most preferred activity type
+        const topActivityType = Object.keys(preferences.activityTypes).length > 0
+          ? Object.keys(preferences.activityTypes).reduce((a, b) => 
+              preferences.activityTypes[a] > preferences.activityTypes[b] ? a : b
+            )
+          : null;
+
+        // Find most preferred location
+        const topLocation = Object.keys(preferences.locations).length > 0
+          ? Object.keys(preferences.locations).reduce((a, b) => 
+              preferences.locations[a] > preferences.locations[b] ? a : b
+            )
+          : null;
+
+        // Fetch all active listings
+        const allListingsQuery = query(
+          collection(db, "listings"),
+          where("status", "==", "active")
+        );
+        const allListingsSnapshot = await getDocs(allListingsQuery);
+        const allListings = allListingsSnapshot.docs.map(doc => ({ 
+          id: doc.id, 
+          ...doc.data() 
+        }));
+
+        // Score and rank listings based on preferences
+        const scoredListings = allListings
+          .filter(listing => !preferences.bookedListingIds.has(listing.id)) // Exclude already booked
+          .map(listing => {
+            let score = 0;
+
+            // Main category match (highest weight - 35 points)
+            if (topCategory && listing.category === topCategory) {
+              score += 35;
+            }
+
+            // Subcategory match (for places - high weight - 25 points)
+            if (topSubcategory && listing.subcategory === topSubcategory) {
+              score += 25;
+            }
+
+            // Place type match (high weight - 20 points)
+            if (topPlaceType && listing.placeType === topPlaceType) {
+              score += 20;
+            }
+
+            // Service type match (high weight - 20 points)
+            if (topServiceType && listing.serviceType === topServiceType) {
+              score += 20;
+            }
+
+            // Activity type match (high weight - 20 points)
+            if (topActivityType && listing.activityType === topActivityType) {
+              score += 20;
+            }
+
+            // Location match (medium-high weight - 18 points)
+            if (topLocation && listing.location && listing.location.includes(topLocation)) {
+              score += 18;
+            }
+
+            // Price similarity (medium weight - 15 points)
+            if (listing.price && preferences.priceRange.avg > 0) {
+              const priceDiff = Math.abs(parseFloat(listing.price) - preferences.priceRange.avg);
+              const priceRange = preferences.priceRange.max - preferences.priceRange.min || 1;
+              const priceScore = Math.max(0, 15 * (1 - priceDiff / priceRange));
+              score += priceScore;
+            }
+
+            // Amenities match (medium weight - 12 points)
+            if (listing.amenities && Array.isArray(listing.amenities) && preferences.amenities.size > 0) {
+              const matchingAmenities = listing.amenities.filter(a => preferences.amenities.has(a)).length;
+              const amenityScore = (matchingAmenities / preferences.amenities.size) * 12;
+              score += amenityScore;
+            }
+
+            // Services match (low weight - 8 points)
+            if (listing.services && Array.isArray(listing.services) && preferences.services.size > 0) {
+              const matchingServices = listing.services.filter(s => preferences.services.has(s)).length;
+              const serviceScore = (matchingServices / preferences.services.size) * 8;
+              score += serviceScore;
+            }
+
+            return { listing, score };
+          })
+          .filter(item => item.score > 0) // Only include listings with some match
+          .sort((a, b) => b.score - a.score) // Sort by score descending
+          .slice(0, 6) // Get top 6 recommendations
+          .map(item => item.listing);
+
+        setRecommendedListings(scoredListings);
+      } catch (error) {
+        console.error("Error fetching recommendations:", error);
+        setRecommendedListings([]);
+      } finally {
+        setRecommendationsLoading(false);
+      }
+    };
+
+    fetchRecommendations();
+  }, [currentUser, userRole]);
+
   // Fetch listings from Firestore
   useEffect(() => {
     const fetchListings = async () => {
@@ -518,25 +791,27 @@ const Home = () => {
     
     // Filter by category
     if (selectedCategory === "homes") {
-      // Homes = resort, hotel, or transient categories
+      // Homes = resort, hotel, transient categories, or places with placeType
       filtered = filtered.filter(listing => 
         listing.category === "resort" || 
         listing.category === "hotel" || 
-        listing.category === "transient"
+        listing.category === "transient" ||
+        listing.placeType ||
+        (listing.category === "place" && !listing.activityType && !listing.serviceType)
       );
     } else if (selectedCategory === "experiences") {
-      // Experiences = listings that have experiences array with items
+      // Experiences = listings with activityType or category === "experience"
       filtered = filtered.filter(listing => 
-        listing.experiences && 
-        Array.isArray(listing.experiences) && 
-        listing.experiences.length > 0
+        listing.activityType || 
+        listing.category === "experience" ||
+        (listing.experiences && Array.isArray(listing.experiences) && listing.experiences.length > 0)
       );
     } else if (selectedCategory === "services") {
-      // Services = listings that have services array with items
+      // Services = listings with serviceType or category === "service"
       filtered = filtered.filter(listing => 
-        listing.services && 
-        Array.isArray(listing.services) && 
-        listing.services.length > 0
+        listing.serviceType || 
+        listing.category === "service" ||
+        (listing.services && Array.isArray(listing.services) && listing.services.length > 0)
       );
     }
 
@@ -584,10 +859,8 @@ const Home = () => {
     );
   }
 
-  // If user is in host mode, show host dashboard instead
-  if (currentUser && userRole === "host" && userRoles && userRoles.includes("host")) {
-    return <HostHomePage />;
-  }
+  // Note: Removed auto-redirect to host dashboard - let users navigate manually
+  // If you want hosts to see HostHomePage by default, they can click "Switch to Hosting" button
 
   return (
     <div className="bg-white">
@@ -633,7 +906,7 @@ const Home = () => {
             </Link>
             {currentUser && userRoles && userRoles.includes("host") ? (
               <Link
-                to="/host/dashboard"
+                to="/host/listings"
                 className="hero-cta-button bg-[#FF9500] text-white rounded-2xl text-base sm:text-lg font-medium hover:bg-[#FF8500] transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 active:scale-95"
               >
                 Switch to Hosting
@@ -938,6 +1211,51 @@ const Home = () => {
           </div>
         </div>
       </div>
+
+      {/* Recommendations Section - Only show for guests with booking history */}
+      {currentUser && userRole === "guest" && recommendedListings.length > 0 && (
+        <div className="px-3 sm:px-4 md:px-6 py-6 sm:py-8 md:py-12 bg-gradient-to-br from-[#F5F5F7] to-white">
+          <div className="w-full max-w-6xl mx-auto">
+            <div className="mb-6 sm:mb-8">
+              <div className="flex items-center gap-3 mb-2">
+                <svg className="w-6 h-6 sm:w-8 sm:h-8 text-[#0071E3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+                <h2 className="text-xl sm:text-2xl md:text-3xl font-semibold text-[#1C1C1E]">
+                  Recommended for You
+                </h2>
+              </div>
+              <p className="text-sm sm:text-base text-[#717171]">
+                Based on your previous bookings and preferences
+              </p>
+            </div>
+
+            {recommendationsLoading ? (
+              <div className="text-center py-12">
+                <div className="text-[#1C1C1E]/50 font-light">Loading recommendations...</div>
+              </div>
+            ) : (
+              <div className="listing-section">
+                {/* Mobile: Horizontal Scroll */}
+                <div className="flex sm:hidden gap-4 overflow-x-auto pb-4 scrollbar-hide -mx-3 sm:-mx-4 md:-mx-6 px-3 sm:px-4 md:px-6 mb-8">
+                  {recommendedListings.map((listing) => (
+                    <div key={listing.id} className="flex-shrink-0 w-[280px]">
+                      <ListingCard listing={listing} currentUser={currentUser} />
+                    </div>
+                  ))}
+                </div>
+
+                {/* Desktop: Grid */}
+                <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
+                  {recommendedListings.map((listing) => (
+                    <ListingCard key={listing.id} listing={listing} currentUser={currentUser} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Main Content Section - Airbnb Style Listings */}
       <div id="listings" className="listings-section px-3 sm:px-4 md:px-6 py-6 sm:py-8 md:py-12 bg-white">

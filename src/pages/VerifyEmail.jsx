@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { applyActionCode, verifyPasswordResetCode, confirmPasswordReset } from "firebase/auth";
 import { auth } from "../firebase";
+import { verifyEmailToken } from "../utils/emailVerification";
 
 const VerifyEmail = () => {
   const [searchParams] = useSearchParams();
@@ -12,51 +12,17 @@ const VerifyEmail = () => {
   useEffect(() => {
     const handleVerification = async () => {
       try {
-        // Firebase sends the oobCode in the URL query parameters
+        // Check for custom token (EmailJS verification)
+        const token = searchParams.get("token");
+        const userId = searchParams.get("userId");
+        
+        // Also check for Firebase's oobCode (for backward compatibility)
         const mode = searchParams.get("mode");
         const actionCode = searchParams.get("oobCode");
-        
-        // Also check for continueUrl parameter (Firebase redirect format)
-        const continueUrl = searchParams.get("continueUrl");
-        let finalActionCode = actionCode;
-        
-        // If continueUrl is present, extract oobCode from it
-        if (continueUrl && !actionCode) {
-          try {
-            const url = new URL(continueUrl);
-            finalActionCode = url.searchParams.get("oobCode");
-            const continueMode = url.searchParams.get("mode");
-            if (continueMode) {
-              // Use the mode from continueUrl if available
-              if (continueMode === "verifyEmail" && finalActionCode) {
-                await applyActionCode(auth, finalActionCode);
-                setStatus("success");
-                setMessage("Email verified successfully! Redirecting to login...");
-                setTimeout(() => {
-                  navigate("/login", {
-                    state: {
-                      message: "Email verified successfully! You can now sign in."
-                    }
-                  });
-                }, 2000);
-                return;
-              }
-            }
-          } catch (e) {
-            console.error("Error parsing continueUrl:", e);
-          }
-        }
 
-        if (!finalActionCode) {
-          setStatus("error");
-          setMessage("Invalid verification link. Please request a new verification email.");
-          setTimeout(() => navigate("/login"), 3000);
-          return;
-        }
-
-        if (mode === "verifyEmail") {
-          // Verify email
-          await applyActionCode(auth, finalActionCode);
+        // Handle token-based verification (EmailJS)
+        if (token && userId) {
+          await verifyEmailToken(token, userId);
           setStatus("success");
           setMessage("Email verified successfully! Redirecting to login...");
           setTimeout(() => {
@@ -66,24 +32,47 @@ const VerifyEmail = () => {
               }
             });
           }, 2000);
-        } else if (mode === "resetPassword") {
-          // Handle password reset (if needed in the future)
-          setStatus("reset");
-          setMessage("Password reset link detected. Redirecting...");
-          setTimeout(() => navigate("/login"), 2000);
-        } else {
-          setStatus("error");
-          setMessage("Invalid verification link.");
-          setTimeout(() => navigate("/login"), 3000);
+          return;
         }
+
+        // Handle Firebase's built-in verification (backward compatibility)
+        if (mode === "verifyEmail" && actionCode) {
+          const { applyActionCode } = await import("firebase/auth");
+          await applyActionCode(auth, actionCode);
+          setStatus("success");
+          setMessage("Email verified successfully! Redirecting to login...");
+          setTimeout(() => {
+            navigate("/login", {
+              state: {
+                message: "Email verified successfully! You can now sign in."
+              }
+            });
+          }, 2000);
+          return;
+        }
+
+        // No valid verification method found
+        setStatus("error");
+        setMessage("Invalid verification link. Please request a new verification email.");
+        setTimeout(() => navigate("/login"), 3000);
       } catch (error) {
         console.error("Verification error:", error);
         setStatus("error");
         
-        if (error.code === "auth/expired-action-code") {
+        if (error.message?.includes("expired")) {
           setMessage("This verification link has expired. Please request a new verification email.");
-        } else if (error.code === "auth/invalid-action-code") {
-          setMessage("This verification link is invalid or has already been used.");
+        } else if (error.message?.includes("already verified")) {
+          setMessage("This email is already verified. You can sign in now.");
+          setTimeout(() => {
+            navigate("/login", {
+              state: {
+                message: "Email already verified. You can sign in now."
+              }
+            });
+          }, 2000);
+          return;
+        } else if (error.message?.includes("Invalid") || error.message?.includes("not found")) {
+          setMessage("This verification link is invalid. Please request a new verification email.");
         } else {
           setMessage("Failed to verify email. Please try again or request a new verification email.");
         }
@@ -149,8 +138,3 @@ const VerifyEmail = () => {
 };
 
 export default VerifyEmail;
-
-
-
-
-

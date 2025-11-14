@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useEffect, useRef } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { doc, getDoc, updateDoc, setDoc } from "firebase/firestore";
 import { db } from "../../firebase";
@@ -11,9 +11,13 @@ const TOTAL_STEPS = 6;
 
 const HostOnboarding = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const isUpgrade = searchParams.get("upgrade") === "true";
+  const upgradePlanId = searchParams.get("plan");
   const { currentUser, userRole, userRoles, setUserRole, loading: authLoading } = useAuth();
-  const [currentStep, setCurrentStep] = useState(1);
-  const [showPolicyModal, setShowPolicyModal] = useState(false);
+  const [currentStep, setCurrentStep] = useState(isUpgrade ? 3 : 1); // Skip to payment step if upgrading
+  const [showPolicyModal, setShowPolicyModal] = useState(!isUpgrade); // Don't show policy modal if upgrading
+  const [policyAcknowledged, setPolicyAcknowledged] = useState(isUpgrade); // Auto-acknowledge if upgrading
   const [formData, setFormData] = useState({
     plan: null,
     profilePhoto: null,
@@ -22,11 +26,21 @@ const HostOnboarding = () => {
     bio: "",
     hostingExperience: "",
     paypalEmail: "",
-    agreeToTerms: false
+    agreeToTerms: false,
+    policyRead: false
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  // Use a ref to track if we should allow redirects
+  const isOnboardingActive = useRef(true); // Start as true to prevent initial redirect
+  const hasCheckedOnboarding = useRef(false);
+
+  useEffect(() => {
+    // Mark that we're in onboarding if currentStep is between 1-6
+    isOnboardingActive.current = currentStep > 0 && currentStep < 7;
+  }, [currentStep]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -36,15 +50,48 @@ const HostOnboarding = () => {
       return;
     }
 
-    // If already a host, redirect to dashboard
-    if (userRoles && userRoles.includes("host")) {
-      navigate("/host/dashboard");
-      return;
+    // Always check if we're in onboarding first - NEVER redirect if in onboarding
+    const isInOnboarding = currentStep > 0 && currentStep < 7;
+    
+    // Don't redirect if we're actively in the onboarding process
+    if (isInOnboarding) {
+      // We're in the onboarding flow, don't redirect - just load data once
+      if (!hasCheckedOnboarding.current) {
+        loadUserData();
+        hasCheckedOnboarding.current = true;
+      }
+      return; // CRITICAL: Exit early to prevent any redirects
     }
 
-    // Load existing user data
-    loadUserData();
-  }, [currentUser, userRoles, authLoading, navigate]);
+    // Only check onboarding status once on initial mount if not in onboarding
+    if (hasCheckedOnboarding.current) {
+      return; // Already checked, don't check again
+    }
+
+    // Check if onboarding is already completed (only on initial mount if not in onboarding)
+    const checkOnboardingStatus = async () => {
+      try {
+        const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          // Only redirect if onboarding is completed AND user has host role AND we're not in onboarding
+          if (userData.onboardingCompleted && userRoles && userRoles.includes("host")) {
+            navigate("/host/listings");
+            return;
+          }
+        }
+      } catch (error) {
+        console.error("Error checking onboarding status:", error);
+      }
+      
+      // Load existing user data if not redirecting
+      loadUserData();
+      hasCheckedOnboarding.current = true;
+    };
+
+    checkOnboardingStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser, authLoading, navigate, currentStep]); // Include currentStep to always check if in onboarding
 
   const loadUserData = async () => {
     if (!currentUser) return;
@@ -64,9 +111,60 @@ const HostOnboarding = () => {
     }
   };
 
+  // Load plan data when in upgrade mode
+  useEffect(() => {
+    if (isUpgrade && upgradePlanId) {
+      const plans = [
+        {
+          id: "starter",
+          name: "Starter",
+          price: 29,
+          listings: 3,
+          duration: "1 year",
+          description: "Perfect for new hosts looking to get started",
+          bestFor: "New hosts"
+        },
+        {
+          id: "pro",
+          name: "Pro",
+          price: 79,
+          listings: 10,
+          duration: "1 year",
+          description: "Ideal for growing hosts expanding their presence",
+          bestFor: "Growing hosts",
+          popular: true
+        },
+        {
+          id: "elite",
+          name: "Elite",
+          price: 199,
+          listings: 1000,
+          duration: "1 year",
+          description: "Best for businesses and professional hosts",
+          bestFor: "Businesses"
+        }
+      ];
+
+      const selectedPlan = plans.find(plan => plan.id === upgradePlanId);
+      if (selectedPlan) {
+        setFormData(prev => ({
+          ...prev,
+          plan: selectedPlan,
+          policyRead: true, // Auto-acknowledge for upgrades
+          agreeToTerms: true // Auto-agree for upgrades
+        }));
+      }
+    }
+  }, [isUpgrade, upgradePlanId]);
+
   const handleNext = () => {
     if (currentStep === 1) {
-      // Welcome step - just continue
+      // Welcome step - validate policy is read
+      if (!formData.policyRead) {
+        setError("Please read and acknowledge the Policy and Compliance guidelines before continuing.");
+        setShowPolicyModal(true);
+        return;
+      }
       setCurrentStep(2);
     } else if (currentStep === 2) {
       // Plan selection - validate plan is selected
@@ -104,7 +202,10 @@ const HostOnboarding = () => {
   };
 
   const handleBack = () => {
-    if (currentStep > 1) {
+    if (isUpgrade && currentStep === 3) {
+      // If upgrading and on payment step, go back to listings
+      navigate("/host/listings");
+    } else if (currentStep > 1) {
       setCurrentStep(currentStep - 1);
       setError("");
     }
@@ -118,19 +219,36 @@ const HostOnboarding = () => {
   const handlePaymentSuccess = async (details) => {
     try {
       setLoading(true);
+      const isWalletPayment = details.id && details.id.startsWith("wallet_");
+      
       // Update user document with subscription info
-      await updateDoc(doc(db, "users", currentUser.uid), {
+      const updateData = {
         subscriptionPlan: formData.plan.id,
         subscriptionStatus: "active",
         subscriptionStartDate: new Date().toISOString(),
-        paypalOrderId: details.id
-      });
+      };
       
-      setSuccess("Payment successful! Subscription activated.");
-      setTimeout(() => {
-        setCurrentStep(4);
-        setSuccess("");
-      }, 2000);
+      // Only add PayPal order ID if it's a PayPal payment
+      if (!isWalletPayment && details.id) {
+        updateData.paypalOrderId = details.id;
+      }
+      
+      await updateDoc(doc(db, "users", currentUser.uid), updateData);
+      
+      setSuccess(`Payment successful! Subscription ${isUpgrade ? "upgraded" : "activated"} via ${isWalletPayment ? "E-Wallet" : "PayPal"}.`);
+      
+      // If upgrading, redirect to listings page after payment
+      if (isUpgrade) {
+        setTimeout(() => {
+          navigate("/host/listings");
+        }, 2000);
+      } else {
+        // If new onboarding, continue to next step
+        setTimeout(() => {
+          setCurrentStep(4);
+          setSuccess("");
+        }, 2000);
+      }
     } catch (error) {
       console.error("Error processing payment:", error);
       setError("Failed to process payment. Please try again.");
@@ -246,33 +364,35 @@ const HostOnboarding = () => {
     <div className="min-h-screen bg-[#F5F5F7]">
       <Header />
       
-      {/* Progress Bar */}
-      <div className="bg-white border-b border-gray-200 sticky top-14 z-40">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-light text-[#8E8E93]">
-              Step {currentStep} of {TOTAL_STEPS}
-            </span>
-            <button
-              onClick={() => navigate("/")}
-              className="text-sm font-light text-[#8E8E93] hover:text-[#1C1C1E] transition-colors"
-            >
-              Exit
-            </button>
-          </div>
-          <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
-            <div 
-              className="bg-[#0071E3] h-full rounded-full transition-all duration-500 ease-out"
-              style={{ width: `${progressPercentage}%` }}
-            ></div>
-          </div>
-          <div className="text-right mt-2">
-            <span className="text-sm font-light text-[#0071E3]">
-              {progressPercentage}% Complete
-            </span>
+      {/* Progress Bar - Only show for steps 1-6, hide on success screen */}
+      {currentStep <= TOTAL_STEPS && (
+        <div className="bg-white border-b border-gray-200 sticky top-14 z-40">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-light text-[#8E8E93]">
+                Step {currentStep} of {TOTAL_STEPS}
+              </span>
+              <button
+                onClick={() => navigate("/")}
+                className="text-sm font-light text-[#8E8E93] hover:text-[#1C1C1E] transition-colors"
+              >
+                Exit
+              </button>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+              <div 
+                className="bg-[#0071E3] h-full rounded-full transition-all duration-500 ease-out"
+                style={{ width: `${progressPercentage}%` }}
+              ></div>
+            </div>
+            <div className="text-right mt-2">
+              <span className="text-sm font-light text-[#0071E3]">
+                {progressPercentage}% Complete
+              </span>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Main Content */}
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 lg:py-16">
@@ -324,17 +444,24 @@ const HostOnboarding = () => {
 
         {/* Step Content */}
         {currentStep === 7 ? (
-          <SuccessStep formData={formData} onContinue={() => navigate("/host/dashboard")} />
+          <SuccessStep formData={formData} onContinue={() => navigate("/host/listings")} />
         ) : (
           <>
             <div className="bg-white rounded-3xl shadow-lg p-6 sm:p-8 lg:p-12 animate-fadeInUp">
-              {currentStep === 1 && <WelcomeStep formData={formData} setShowPolicyModal={setShowPolicyModal} />}
+              {currentStep === 1 && (
+                <WelcomeStep 
+                  formData={formData} 
+                  setShowPolicyModal={setShowPolicyModal}
+                  policyAcknowledged={policyAcknowledged}
+                />
+              )}
               {currentStep === 2 && <PlanSelectionStep formData={formData} onPlanSelect={handlePlanSelect} />}
               {currentStep === 3 && (
                 <PaymentStep 
                   formData={formData} 
                   onPaymentSuccess={handlePaymentSuccess}
                   loading={loading}
+                  isUpgrade={isUpgrade}
                 />
               )}
               {currentStep === 4 && (
@@ -371,7 +498,7 @@ const HostOnboarding = () => {
               {currentStep !== 3 && currentStep !== 6 && (
                 <button
                   onClick={handleNext}
-                  disabled={loading}
+                  disabled={loading || (currentStep === 1 && !formData.policyRead)}
                   className="px-8 py-3 bg-[#0071E3] text-white rounded-xl text-sm sm:text-base font-medium hover:bg-[#0051D0] transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Continue
@@ -393,14 +520,26 @@ const HostOnboarding = () => {
 
       {/* Policy Modal */}
       {showPolicyModal && (
-        <PolicyModal onClose={() => setShowPolicyModal(false)} />
+        <PolicyModal 
+          onClose={() => {
+            if (policyAcknowledged) {
+              setShowPolicyModal(false);
+            }
+          }}
+          onAcknowledge={() => {
+            setPolicyAcknowledged(true);
+            setFormData(prev => ({ ...prev, policyRead: true }));
+            setShowPolicyModal(false);
+          }}
+          acknowledged={policyAcknowledged}
+        />
       )}
     </div>
   );
 };
 
 // Step 1: Welcome
-const WelcomeStep = ({ formData, setShowPolicyModal }) => {
+const WelcomeStep = ({ formData, setShowPolicyModal, policyAcknowledged }) => {
   const { currentUser } = useAuth();
   const userFirstName = currentUser?.displayName?.split(" ")[0] || currentUser?.email?.split("@")[0] || "there";
 
@@ -420,16 +559,28 @@ const WelcomeStep = ({ formData, setShowPolicyModal }) => {
       <p className="text-base sm:text-lg text-[#8E8E93] font-light mb-8 sm:mb-10 max-w-2xl mx-auto leading-relaxed">
         Let's create your professional hosting profile and get you ready to host amazing stays on Voyago.
       </p>
-      <p className="text-sm sm:text-base text-[#1C1C1E] font-light">
-        Please review our{" "}
-        <button
-          onClick={() => setShowPolicyModal(true)}
-          className="text-[#0071E3] hover:text-[#0051D0] underline transition-colors"
-        >
-          Policy and Compliance
-        </button>
-        {" "}before continuing.
-      </p>
+      {policyAcknowledged ? (
+        <div className="flex items-center justify-center gap-2 text-green-600 mb-4">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          <p className="text-sm sm:text-base font-medium">
+            Policy and Compliance acknowledged
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <p className="text-sm sm:text-base text-[#1C1C1E] font-medium mb-4">
+            ⚠️ You must read and acknowledge our Policy and Compliance guidelines before continuing.
+          </p>
+          <button
+            onClick={() => setShowPolicyModal(true)}
+            className="px-6 py-3 bg-[#0071E3] text-white rounded-xl text-sm sm:text-base font-medium hover:bg-[#0051D0] transition-all duration-200 shadow-lg hover:shadow-xl"
+          >
+            Read Policy and Compliance
+          </button>
+        </div>
+      )}
     </div>
   );
 };
@@ -540,7 +691,85 @@ const PlanSelectionStep = ({ formData, onPlanSelect }) => {
 };
 
 // Step 3: Payment
-const PaymentStep = ({ formData, onPaymentSuccess, loading }) => {
+const PaymentStep = ({ formData, onPaymentSuccess, loading, isUpgrade = false }) => {
+  const { currentUser } = useAuth();
+  const [paymentMethod, setPaymentMethod] = useState("paypal"); // "paypal" or "wallet"
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [checkingWallet, setCheckingWallet] = useState(true);
+  const [processingWallet, setProcessingWallet] = useState(false);
+
+  useEffect(() => {
+    if (currentUser) {
+      fetchWalletBalance();
+    }
+  }, [currentUser]);
+
+  const fetchWalletBalance = async () => {
+    try {
+      const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        setWalletBalance(data.walletBalance || 0);
+      }
+    } catch (error) {
+      console.error("Error fetching wallet balance:", error);
+    } finally {
+      setCheckingWallet(false);
+    }
+  };
+
+  const handleWalletPayment = async () => {
+    if (walletBalance < formData.plan.price) {
+      alert(`Insufficient wallet balance. You have $${walletBalance.toFixed(2)} but need $${formData.plan.price}. Please use PayPal or add funds to your wallet.`);
+      return;
+    }
+
+    try {
+      setProcessingWallet(true);
+      const userRef = doc(db, "users", currentUser.uid);
+      const userDoc = await getDoc(userRef);
+      
+      if (userDoc.exists()) {
+        const currentBalance = userDoc.data().walletBalance || 0;
+        const newBalance = currentBalance - formData.plan.price;
+        
+        const transaction = {
+          type: "subscription_payment",
+          amount: formData.plan.price,
+          date: new Date().toISOString(),
+          status: "completed",
+          method: "wallet",
+          plan: formData.plan.name,
+        };
+
+        const existingTransactions = userDoc.data().transactions || [];
+        
+        await updateDoc(userRef, {
+          walletBalance: newBalance,
+          transactions: [transaction, ...existingTransactions].slice(0, 10),
+        });
+
+        // Create a mock payment details object similar to PayPal's structure
+        const mockPaymentDetails = {
+          id: `wallet_${Date.now()}`,
+          status: "COMPLETED",
+          purchase_units: [{
+            amount: {
+              value: formData.plan.price.toString(),
+              currency_code: "USD"
+            }
+          }]
+        };
+
+        onPaymentSuccess(mockPaymentDetails);
+      }
+    } catch (error) {
+      console.error("Error processing wallet payment:", error);
+      alert("Failed to process payment. Please try again.");
+      setProcessingWallet(false);
+    }
+  };
+
   if (!formData.plan) {
     return (
       <div className="text-center">
@@ -552,10 +781,13 @@ const PaymentStep = ({ formData, onPaymentSuccess, loading }) => {
   return (
     <div className="animate-fadeInUp">
       <h2 className="text-3xl sm:text-4xl font-light text-[#1C1C1E] mb-3 sm:mb-4 text-center">
-        Complete Payment
+        {isUpgrade ? "Upgrade Your Plan" : "Complete Payment"}
       </h2>
       <p className="text-base sm:text-lg text-[#8E8E93] font-light mb-8 sm:mb-12 text-center">
-        Pay for your {formData.plan.name} plan subscription
+        {isUpgrade 
+          ? `Upgrade to the ${formData.plan.name} plan to get more listings`
+          : `Pay for your ${formData.plan.name} plan subscription`
+        }
       </p>
 
       <div className="max-w-md mx-auto bg-gray-50 rounded-2xl p-6 sm:p-8">
@@ -573,36 +805,124 @@ const PaymentStep = ({ formData, onPaymentSuccess, loading }) => {
           </div>
         </div>
 
-        <PayPalScriptProvider options={{ clientId: PAYPAL_CLIENT_ID, currency: "USD" }}>
-          <PayPalButtons
-            createOrder={(data, actions) => {
-              return actions.order.create({
-                purchase_units: [
-                  {
-                    description: `${formData.plan.name} Plan - Annual Subscription`,
-                    amount: {
-                      currency_code: "USD",
-                      value: formData.plan.price.toString(),
+        {/* Payment Method Selection */}
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-[#1C1C1E] mb-3">
+            Select Payment Method
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={() => setPaymentMethod("paypal")}
+              className={`p-4 rounded-xl border-2 transition-all duration-200 ${
+                paymentMethod === "paypal"
+                  ? "border-[#0071E3] bg-[#0071E3]/5"
+                  : "border-gray-200 hover:border-gray-300"
+              }`}
+            >
+              <div className="flex flex-col items-center gap-2">
+                <svg className="w-8 h-8 text-[#0071E3]" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M7.076 21.337H2.47a.641.641 0 0 1-.633-.74L4.944.901C5.026.382 5.474 0 5.998 0h7.46c2.57 0 4.578.543 5.69 1.81 1.174 1.351 1.05 3.3.93 4.855v.08c-.011 1.699-.027 3.4-.04 4.26-.014.86-.024 1.49-.024 1.93 0 .3.168.54.5.65 1.417.48 2.24 1.44 2.24 2.9 0 1.72-1.39 3.12-3.1 3.12h-2.75c-.524 0-.968.382-1.05.9l-1.12 7.38zm8.267-13.99a.477.477 0 0 0-.415.24l-3.15 5.66h2.85c.524 0 .968.382 1.05.9l.9 5.92 2.1-14.72zm-2.85 5.66l-1.5-2.7-1.5 2.7h3z"/>
+                </svg>
+                <span className="text-sm font-medium text-[#1C1C1E]">PayPal</span>
+              </div>
+            </button>
+            <button
+              onClick={() => setPaymentMethod("wallet")}
+              className={`p-4 rounded-xl border-2 transition-all duration-200 ${
+                paymentMethod === "wallet"
+                  ? "border-[#34C759] bg-[#34C759]/5"
+                  : "border-gray-200 hover:border-gray-300"
+              }`}
+            >
+              <div className="flex flex-col items-center gap-2">
+                <svg className="w-8 h-8 text-[#34C759]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+                <span className="text-sm font-medium text-[#1C1C1E]">E-Wallet</span>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        {/* Wallet Balance Display */}
+        {paymentMethod === "wallet" && (
+          <div className="mb-6 p-4 bg-white rounded-xl border border-gray-200">
+            {checkingWallet ? (
+              <p className="text-sm text-[#8E8E93] font-light">Checking wallet balance...</p>
+            ) : (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-[#8E8E93] font-light">Wallet Balance:</span>
+                <span className={`text-lg font-medium ${
+                  walletBalance >= formData.plan.price ? "text-[#34C759]" : "text-[#FF3B30]"
+                }`}>
+                  ${walletBalance.toFixed(2)}
+                </span>
+              </div>
+            )}
+            {!checkingWallet && walletBalance < formData.plan.price && (
+              <p className="text-xs text-[#FF3B30] font-light mt-2">
+                Insufficient balance. You need ${(formData.plan.price - walletBalance).toFixed(2)} more.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Payment Options */}
+        {paymentMethod === "paypal" ? (
+          <PayPalScriptProvider options={{ clientId: PAYPAL_CLIENT_ID, currency: "USD" }}>
+            <PayPalButtons
+              createOrder={(data, actions) => {
+                return actions.order.create({
+                  purchase_units: [
+                    {
+                      description: `${formData.plan.name} Plan - Annual Subscription`,
+                      amount: {
+                        currency_code: "USD",
+                        value: formData.plan.price.toString(),
+                      },
                     },
-                  },
-                ],
-              });
-            }}
-            onApprove={async (data, actions) => {
-              const details = await actions.order.capture();
-              onPaymentSuccess(details);
-            }}
-            onError={(err) => {
-              console.error("PayPal error:", err);
-            }}
-            style={{
-              layout: "vertical",
-              color: "blue",
-              shape: "rect",
-              label: "paypal"
-            }}
-          />
-        </PayPalScriptProvider>
+                  ],
+                });
+              }}
+              onApprove={async (data, actions) => {
+                const details = await actions.order.capture();
+                onPaymentSuccess(details);
+              }}
+              onError={(err) => {
+                console.error("PayPal error:", err);
+              }}
+              style={{
+                layout: "vertical",
+                color: "blue",
+                shape: "rect",
+                label: "paypal"
+              }}
+            />
+          </PayPalScriptProvider>
+        ) : (
+          <button
+            onClick={handleWalletPayment}
+            disabled={processingWallet || checkingWallet || walletBalance < formData.plan.price}
+            className={`w-full py-4 rounded-xl text-base font-medium transition-all duration-200 ${
+              processingWallet || checkingWallet || walletBalance < formData.plan.price
+                ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                : "bg-[#34C759] text-white hover:bg-[#30D158] shadow-sm hover:shadow-md"
+            }`}
+          >
+            {processingWallet ? (
+              <div className="flex items-center justify-center gap-2">
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                <span>Processing...</span>
+              </div>
+            ) : checkingWallet ? (
+              "Checking Balance..."
+            ) : walletBalance < formData.plan.price ? (
+              "Insufficient Balance"
+            ) : (
+              `Pay $${formData.plan.price} with E-Wallet`
+            )}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -866,12 +1186,38 @@ const SuccessStep = ({ formData, onContinue }) => {
 };
 
 // Policy Modal
-const PolicyModal = ({ onClose }) => {
+const PolicyModal = ({ onClose, onAcknowledge, acknowledged }) => {
+  const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
+  const [agreeChecked, setAgreeChecked] = useState(false);
+  const scrollContainerRef = useRef(null);
+
+  const handleScroll = () => {
+    const container = scrollContainerRef.current;
+    if (container) {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      // Check if user has scrolled to within 50px of the bottom
+      if (scrollHeight - scrollTop - clientHeight < 50) {
+        setHasScrolledToBottom(true);
+      }
+    }
+  };
+
+  const handleAcknowledge = () => {
+    if (agreeChecked && hasScrolledToBottom) {
+      onAcknowledge();
+    }
+  };
+
   return (
     <>
       <div 
         className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50"
-        onClick={onClose}
+        onClick={() => {
+          // Don't allow closing by clicking outside if not acknowledged
+          if (acknowledged) {
+            onClose();
+          }
+        }}
         style={{ animation: 'fadeIn 0.3s ease-out' }}
       ></div>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
@@ -881,16 +1227,22 @@ const PolicyModal = ({ onClose }) => {
         >
           <div className="p-6 sm:p-8 border-b border-gray-200 flex items-center justify-between">
             <h3 className="text-xl sm:text-2xl font-light text-[#1C1C1E]">Voyago Policy & Compliance Guidelines</h3>
-            <button
-              onClick={onClose}
-              className="text-[#8E8E93] hover:text-[#1C1C1E] transition-colors"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+            {acknowledged && (
+              <button
+                onClick={onClose}
+                className="text-[#8E8E93] hover:text-[#1C1C1E] transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
           </div>
-          <div className="p-6 sm:p-8 overflow-y-auto max-h-[calc(90vh-120px)]">
+          <div 
+            ref={scrollContainerRef}
+            onScroll={handleScroll}
+            className="p-6 sm:p-8 overflow-y-auto max-h-[calc(90vh-200px)]"
+          >
             <div className="space-y-6 text-sm sm:text-base text-[#1C1C1E] font-light leading-relaxed">
               <section>
                 <h4 className="text-lg font-medium text-[#1C1C1E] mb-3">Introduction</h4>
@@ -929,14 +1281,50 @@ const PolicyModal = ({ onClose }) => {
                   Hosts are responsible for maintaining accurate listing information, providing clean and safe accommodations, responding to guest inquiries promptly, and honoring confirmed bookings. Hosts must comply with all local laws and regulations regarding short-term rentals.
                 </p>
               </section>
+
+              <section>
+                <h4 className="text-lg font-medium text-[#1C1C1E] mb-3">Code of Conduct</h4>
+                <p className="text-[#8E8E93]">
+                  All hosts must maintain professional conduct, treat guests with respect, and provide accurate descriptions of their properties. Discrimination of any kind is strictly prohibited. Hosts must respond to booking requests and messages in a timely manner.
+                </p>
+              </section>
+
+              <section>
+                <h4 className="text-lg font-medium text-[#1C1C1E] mb-3">Privacy & Data Protection</h4>
+                <p className="text-[#8E8E93]">
+                  Voyago is committed to protecting user privacy. All personal information is handled according to our Privacy Policy. Hosts must respect guest privacy and not share guest information with third parties without consent.
+                </p>
+              </section>
             </div>
           </div>
-          <div className="p-6 sm:p-8 border-t border-gray-200">
+          <div className="p-6 sm:p-8 border-t border-gray-200 space-y-4">
+            {!hasScrolledToBottom && (
+              <p className="text-sm text-amber-600 text-center">
+                ⚠️ Please scroll to the bottom to read the complete policy
+              </p>
+            )}
+            <div className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="agreePolicy"
+                checked={agreeChecked}
+                onChange={(e) => setAgreeChecked(e.target.checked)}
+                disabled={!hasScrolledToBottom}
+                className="mt-1 w-5 h-5 rounded border-gray-300 text-[#0071E3] focus:ring-[#0071E3] focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              <label 
+                htmlFor="agreePolicy" 
+                className={`text-sm sm:text-base text-[#1C1C1E] font-light ${!hasScrolledToBottom ? 'opacity-50' : ''}`}
+              >
+                I have read and understood the Voyago Policy & Compliance Guidelines. I agree to comply with all policies and terms outlined above.
+              </label>
+            </div>
             <button
-              onClick={onClose}
-              className="w-full bg-[#0071E3] text-white rounded-xl py-3 sm:py-4 text-sm sm:text-base font-medium hover:bg-[#0051D0] transition-all duration-200"
+              onClick={handleAcknowledge}
+              disabled={!agreeChecked || !hasScrolledToBottom}
+              className="w-full bg-[#0071E3] text-white rounded-xl py-3 sm:py-4 text-sm sm:text-base font-medium hover:bg-[#0051D0] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              I Understand
+              I Acknowledge and Agree
             </button>
           </div>
         </div>

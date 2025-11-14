@@ -12,11 +12,14 @@
     "deploy:hosting": "firebase deploy --only hosting"
   },
   "dependencies": {
+    "@emailjs/browser": "^4.4.1",
     "@paypal/react-paypal-js": "^8.9.2",
     "@react-google-maps/api": "^2.20.7",
     "@tailwindcss/vite": "^4.1.14",
     "firebase": "^12.5.0",
+    "jspdf": "^3.0.3",
     "react": "^19.1.1",
+    "react-datepicker": "^8.9.0",
     "react-dom": "^19.1.1",
     "react-router-dom": "^7.9.5",
     "tailwindcss": "^4.1.14"

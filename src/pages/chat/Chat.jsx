@@ -1064,6 +1064,63 @@ const Chat = () => {
                 : Infinity;
                       const showTime = !isSameSender || timeDiff > 300000;
               
+              // Check if this is a system message
+              const isSystemMessage = message.isSystem || message.senderId === "system";
+              
+              if (isSystemMessage) {
+                // Render system message with special styling
+                return (
+                  <div
+                    key={message.id}
+                    className="flex justify-center mb-3 animate-fadeInUp"
+                    style={{ animationDelay: `${index * 0.05}s` }}
+                  >
+                    <div className="max-w-[85%] sm:max-w-[75%]">
+                      <div className="bg-[#FF9500]/10 border border-[#FF9500]/20 rounded-2xl px-5 py-4 shadow-sm">
+                        <div className="flex items-start gap-3">
+                          <div className="flex-shrink-0 w-5 h-5 rounded-full bg-[#34C759]/20 flex items-center justify-center mt-0.5">
+                            <svg className="w-3 h-3 text-[#34C759]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-sm sm:text-base leading-relaxed whitespace-pre-wrap break-words text-[#1C1C1E]">
+                              {message.message}
+                            </p>
+                            <span className="text-xs text-[#8E8E93] mt-2 block">
+                              {(() => {
+                                try {
+                                  if (!message.createdAt) return "";
+                                  let date;
+                                  if (message.createdAt.toDate) {
+                                    date = message.createdAt.toDate();
+                                  } else if (message.createdAt instanceof Date) {
+                                    date = message.createdAt;
+                                  } else if (typeof message.createdAt === 'string') {
+                                    date = new Date(message.createdAt);
+                                  } else if (message.createdAt.seconds) {
+                                    date = new Date(message.createdAt.seconds * 1000);
+                                  } else {
+                                    date = new Date(message.createdAt);
+                                  }
+                                  if (isNaN(date.getTime())) return "";
+                                  return date.toLocaleTimeString([], {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  });
+                                } catch (error) {
+                                  return "";
+                                }
+                              })()}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+              
               return (
                 <div
                   key={message.id}

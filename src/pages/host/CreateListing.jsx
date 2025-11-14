@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
-import { collection, addDoc } from "firebase/firestore";
+import { collection, addDoc, query, where, getDocs, getDoc, doc } from "firebase/firestore";
 import { db } from "../../firebase";
 import { cloudinaryConfig, CLOUDINARY_UPLOAD_URL } from "../../config/cloudinary";
 import { GoogleMap, LoadScript, Marker } from "@react-google-maps/api";
@@ -319,6 +319,53 @@ const CreateListing = () => {
     if (!validateForm()) {
       setError("Please fill in all required fields correctly.");
       setLoading(false);
+      return;
+    }
+
+    // Check listing limit based on subscription plan
+    try {
+      const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        const subscriptionPlan = userData.subscriptionPlan || "starter";
+        const subscriptionStatus = userData.subscriptionStatus || "inactive";
+        
+        // Check if subscription is active
+        if (subscriptionStatus !== "active") {
+          setError("❌ Your subscription is not active. Please complete your subscription payment in the onboarding process.");
+          return;
+        }
+        
+        // Get plan limits
+        const planLimits = {
+          starter: 3,
+          pro: 10,
+          elite: 1000 // Unlimited (but we'll use 1000 as a high number)
+        };
+        
+        const listingLimit = planLimits[subscriptionPlan] || 3;
+        
+        // Count existing active listings
+        const listingsQuery = query(
+          collection(db, "listings"),
+          where("hostId", "==", currentUser.uid),
+          where("status", "==", "active")
+        );
+        const listingsSnapshot = await getDocs(listingsQuery);
+        const activeListingsCount = listingsSnapshot.size;
+        
+        // Check if limit is reached (for elite, 1000 is effectively unlimited)
+        if (subscriptionPlan !== "elite" && activeListingsCount >= listingLimit) {
+          setError(`❌ You have reached your listing limit (${listingLimit} listings) for the ${subscriptionPlan.charAt(0).toUpperCase() + subscriptionPlan.slice(1)} plan. Please upgrade your plan to create more listings.`);
+          return;
+        }
+      } else {
+        setError("❌ User data not found. Please complete the onboarding process first.");
+        return;
+      }
+    } catch (limitError) {
+      console.error("Error checking listing limit:", limitError);
+      setError("❌ Failed to verify listing limit. Please try again.");
       return;
     }
 

@@ -3,76 +3,14 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Users can read/write their own user document
-    // Also allow reading other users' basic info for messaging/booking purposes
-    match /users/{userId} {
-      allow read: if request.auth != null; // Allow reading any user's data (for messaging/display)
-      allow write: if request.auth != null && request.auth.uid == userId;
-    }
-
-    // Listings: Anyone can read active listings, hosts can create their own
-    match /listings/{listingId} {
-      allow read: if true; // Anyone can read listings (even without auth)
-      allow create: if request.auth != null && request.resource.data.hostId == request.auth.uid;
-      allow update, delete: if request.auth != null && resource.data.hostId == request.auth.uid;
-    }
-
-    // Bookings: Guests and hosts can create/read/update their bookings
-    // Also allow reading bookings for a listing to check for date conflicts
-    match /bookings/{bookingId} {
-      allow create: if request.auth != null;
-      // Allow reading if user is guest/host OR allow reading for conflict checking (any authenticated user can read booking dates)
-      allow read: if request.auth != null;
-      allow update: if request.auth != null && (
-        resource.data.hostId == request.auth.uid || 
-        resource.data.guestId == request.auth.uid
-      );
-    }
+    // ⚠️ WARNING: DEVELOPMENT MODE ONLY ⚠️
+    // This allows ALL read and write access to your Firestore database.
+    // DO NOT use this in production! This is a security risk.
+    // For production, implement proper security rules based on user roles and permissions.
     
-    // Messages: Users can read messages they sent or received, create messages as sender, and update read status
-    // Note: These rules work with queries - Firestore checks each document returned by the query
-    match /messages/{messageId} {
-      allow read: if request.auth != null && (
-        resource.data.senderId == request.auth.uid || 
-        resource.data.receiverId == request.auth.uid
-      );
-      allow create: if request.auth != null && 
-        request.resource.data.senderId == request.auth.uid;
-      // Allow sender to update their own messages, or receiver to mark as read
-      allow update: if request.auth != null && (
-        resource.data.senderId == request.auth.uid ||
-        (resource.data.receiverId == request.auth.uid && 
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt']))
-      );
-    }
-
-    // Typing indicators: Users can read/write their own typing status and read the other user's typing status
-    match /typing/{typingId} {
-      // Allow read if user is part of the chat (bookingId is in the typingId)
-      allow read: if request.auth != null;
-      // Allow write if the userId in the document matches the current user
-      allow write: if request.auth != null && 
-        (request.resource.data.userId == request.auth.uid || resource.data.userId == request.auth.uid);
-    }
-
-    // Favorites: Users can read/write their own favorites
-    match /favorites/{favoriteId} {
-      // Allow reading if user owns the favorite (works for both direct reads and queries)
-      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
-    }
-
-    // Reviews: Anyone can read approved reviews, users can create reviews for listings they've booked
-    match /reviews/{reviewId} {
-      allow read: if resource.data.status == "approved" || (request.auth != null && resource.data.userId == request.auth.uid);
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
-    }
-
-    // Default: deny all other access (MUST BE LAST)
+    // Allow all read and write access
     match /{document=**} {
-      allow read, write: if false;
+      allow read, write: if true;
     }
   }
 }
