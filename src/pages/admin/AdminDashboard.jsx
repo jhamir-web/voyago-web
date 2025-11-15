@@ -37,12 +37,12 @@ const AdminDashboard = () => {
 
   useEffect(() => {
     const checkAdminAccess = async () => {
-      if (authLoading) return;
-      
-      if (!currentUser) {
-        navigate("/login");
-        return;
-      }
+    if (authLoading) return;
+    
+    if (!currentUser) {
+      navigate("/login");
+      return;
+    }
 
       // Check if user is admin - only system admin can access
       try {
@@ -70,26 +70,56 @@ const AdminDashboard = () => {
       } catch (error) {
         console.error("Error checking admin access:", error);
         // Allow access for now (for testing)
-        // navigate("/");
-        // return;
-      }
+      // navigate("/");
+      // return;
+    }
 
-      // Set active section based on URL
-      const path = location.pathname;
+    // Set active section based on URL
+    const path = location.pathname;
       if (path.includes("/admin/cashout")) setActiveSection("cashout");
       else if (path.includes("/admin/pending")) setActiveSection("pending");
       else if (path.includes("/admin/termination")) setActiveSection("termination");
       else if (path.includes("/admin/servicefees")) setActiveSection("servicefees");
       else if (path.includes("/admin/policy")) setActiveSection("policy");
-      else if (path.includes("/admin/users")) setActiveSection("users");
+    else if (path.includes("/admin/users")) setActiveSection("users");
       else if (path.includes("/admin/reports")) setActiveSection("reports");
-      else setActiveSection("home");
+    else setActiveSection("home");
 
-      fetchStats();
+    fetchStats();
       fetchAdminUserData();
     };
 
     checkAdminAccess();
+    
+    // Set up real-time listeners for stats updates
+    if (currentUser && userRole === "admin") {
+      const unsubscribeBookings = onSnapshot(
+        collection(db, "bookings"),
+        () => {
+          fetchStats();
+        }
+      );
+      
+      const unsubscribeWithdrawals = onSnapshot(
+        collection(db, "withdrawalRequests"),
+        () => {
+          fetchStats();
+        }
+      );
+      
+      const unsubscribeAdminPayments = onSnapshot(
+        collection(db, "adminPayments"),
+        () => {
+          fetchStats();
+        }
+      );
+      
+      return () => {
+        unsubscribeBookings();
+        unsubscribeWithdrawals();
+        unsubscribeAdminPayments();
+      };
+    }
   }, [currentUser, userRole, authLoading, navigate, location]);
 
   const fetchAdminUserData = async () => {
@@ -137,19 +167,37 @@ const AdminDashboard = () => {
       }).length;
       
       // Calculate financial stats
+      // Gross Revenue: All confirmed bookings (total money received by admin from guests)
       const grossRevenue = allBookings
-        .filter(b => b.status === "confirmed" && b.paymentStatus === "paid")
-        .reduce((sum, b) => sum + (b.totalPrice || 0), 0);
+        .filter(b => b.status === "confirmed")
+        .reduce((sum, b) => {
+          const price = parseFloat(b.totalPrice) || 0;
+          return sum + price;
+        }, 0);
       
-      // Platform revenue (service fees) - typically a percentage of gross revenue
-      // For now, calculate as 7% of gross revenue (you can adjust this)
+      // Platform revenue (service fees) - 7% of gross revenue
+      // This represents the service fee the platform earns from each booking
       const serviceFeePercentage = 0.07;
       const platformRevenue = grossRevenue * serviceFeePercentage;
       
-      // Host payouts (completed withdrawals)
+      // Host payouts: Sum of all completed withdrawal amounts
+      // This represents money actually sent to hosts via PayPal
       const hostPayouts = allWithdrawals
         .filter(w => w.status === "completed")
-        .reduce((sum, w) => sum + (w.amount || 0), 0);
+        .reduce((sum, w) => {
+          const amount = parseFloat(w.amount) || 0;
+          return sum + amount;
+        }, 0);
+      
+      // Debug logging
+      console.log("📊 Financial Stats Calculation:", {
+        totalConfirmedBookings: allBookings.filter(b => b.status === "confirmed").length,
+        grossRevenue,
+        platformRevenue,
+        completedWithdrawals: allWithdrawals.filter(w => w.status === "completed").length,
+        hostPayouts,
+        allWithdrawals: allWithdrawals.map(w => ({ id: w.id, status: w.status, amount: w.amount }))
+      });
       
       // Calculate listing stats
       const activeListings = allListings.filter(l => l.status === "active").length;
@@ -827,7 +875,7 @@ const GuestReviewsCard = ({ stats }) => {
   }, [stats]);
 
   if (loading) {
-    return (
+  return (
       <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 animate-fadeInUp">
         <div className="text-center py-12">
           <div className="text-[#8E8E93] font-light">Loading review analytics...</div>
@@ -852,13 +900,13 @@ const GuestReviewsCard = ({ stats }) => {
 
       {bestReviews.length === 0 && lowestReviews.length === 0 ? (
         <div className="text-center py-12">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
-            <svg className="w-8 h-8 text-[#8E8E93]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-            </svg>
-          </div>
-          <p className="text-sm text-[#8E8E93] font-light">No reviews yet</p>
+        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
+          <svg className="w-8 h-8 text-[#8E8E93]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+          </svg>
         </div>
+        <p className="text-sm text-[#8E8E93] font-light">No reviews yet</p>
+      </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Best Reviews */}
@@ -1354,44 +1402,48 @@ const WithdrawalsContent = () => {
           const hostData = hostDoc.data();
           const transactions = hostData.transactions || [];
           
-          const transaction = {
-            type: "withdrawal_completed",
-            amount: withdrawal.amount,
-            withdrawalRequestId: withdrawalId,
-            date: new Date().toISOString(),
-            status: "completed",
-            description: `Withdrawal completed: $${withdrawal.amount.toFixed(2)} sent to ${withdrawal.paypalEmail} via PayPal. Real transfer processed by admin.`
-          };
+          // Update the existing withdrawal_request transaction instead of creating a new one
+          const updatedTransactions = transactions.map(t => {
+            if (t.withdrawalRequestId === withdrawalId && t.type === "withdrawal_request") {
+              return {
+                ...t,
+                status: "completed",
+                description: `Withdrawal completed: $${withdrawal.amount.toFixed(2)} sent to ${withdrawal.paypalEmail} via PayPal. Real transfer processed by admin.`
+              };
+            }
+            return t;
+          });
 
           // Only update transaction history - do NOT update walletBalance
           // walletBalance remains virtual/preview only - real money is in admin's PayPal
           await updateDoc(hostRef, {
-            transactions: [transaction, ...transactions].slice(0, 10)
+            transactions: updatedTransactions
           });
         }
         
-        // Update the adminPayments record to link it to this withdrawal
+        // Mark all adminPayments linked to this withdrawal as completed
         try {
           const adminPaymentsQuery = query(
             collection(db, "adminPayments"),
             where("hostId", "==", withdrawal.hostId),
-            where("withdrawalRequestId", "==", null)
+            where("withdrawalRequestId", "==", withdrawalId)
           );
           const adminPaymentsSnapshot = await getDocs(adminPaymentsQuery);
           
-          // Link the oldest unpaid admin payment to this withdrawal
-          if (!adminPaymentsSnapshot.empty) {
-            const paymentDoc = adminPaymentsSnapshot.docs[0];
-            await updateDoc(doc(db, "adminPayments", paymentDoc.id), {
-              withdrawalRequestId: withdrawalId,
-              withdrawalCompletedAt: serverTimestamp()
-            });
-          }
+          // Mark all linked payments as completed
+          const updatePromises = adminPaymentsSnapshot.docs.map(paymentDoc =>
+            updateDoc(doc(db, "adminPayments", paymentDoc.id), {
+              withdrawalCompletedAt: serverTimestamp(),
+              status: "completed"
+            })
+          );
+          
+          await Promise.all(updatePromises);
         } catch (error) {
-          console.error("Error updating admin payment record:", error);
+          console.error("Error updating admin payment records:", error);
         }
       } else if (newStatus === "rejected") {
-        // If rejected, return amount to pending balance
+        // If rejected, return amount to pending balance and unlink payments
         const hostRef = doc(db, "users", withdrawal.hostId);
         const hostDoc = await getDoc(hostRef);
         
@@ -1400,19 +1452,46 @@ const WithdrawalsContent = () => {
           const currentPending = hostData.pendingBalance || 0;
           const transactions = hostData.transactions || [];
           
-          const transaction = {
-            type: "withdrawal_rejected",
-            amount: withdrawal.amount,
-            withdrawalRequestId: withdrawalId,
-            date: new Date().toISOString(),
-            status: "rejected",
-            description: `Withdrawal rejected: $${withdrawal.amount.toFixed(2)} returned to pending balance`
-          };
+          // Update the existing withdrawal_request transaction instead of creating a new one
+          const updatedTransactions = transactions.map(t => {
+            if (t.withdrawalRequestId === withdrawalId && t.type === "withdrawal_request") {
+              return {
+                ...t,
+                status: "rejected",
+                description: `Withdrawal rejected: $${withdrawal.amount.toFixed(2)} returned to pending balance`
+              };
+            }
+            return t;
+          });
 
           await updateDoc(hostRef, {
             pendingBalance: currentPending + withdrawal.amount,
-            transactions: [transaction, ...transactions].slice(0, 10)
+            transactions: updatedTransactions
           });
+        }
+        
+        // Unlink admin payments from this withdrawal so they show as pending again
+        try {
+          const adminPaymentsQuery = query(
+            collection(db, "adminPayments"),
+            where("hostId", "==", withdrawal.hostId),
+            where("withdrawalRequestId", "==", withdrawalId)
+          );
+          const adminPaymentsSnapshot = await getDocs(adminPaymentsQuery);
+          
+          // Unlink all payments linked to this withdrawal
+          const updatePromises = adminPaymentsSnapshot.docs.map(paymentDoc =>
+            updateDoc(doc(db, "adminPayments", paymentDoc.id), {
+              withdrawalRequestId: null,
+              withdrawalRequestedAt: null,
+              withdrawalCompletedAt: null,
+              status: "received"
+            })
+          );
+          
+          await Promise.all(updatePromises);
+        } catch (error) {
+          console.error("Error unlinking admin payment records:", error);
         }
       }
 

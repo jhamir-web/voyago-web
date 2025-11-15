@@ -1005,7 +1005,7 @@ const ListingDetails = () => {
       </div>
 
       {/* Category Filters */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-8 pb-4 sm:pb-6">
         <div className="flex items-center gap-3 sm:gap-4">
           <button className="px-4 py-2 rounded-full bg-[#F5F5F7] hover:bg-gray-200 transition-colors flex items-center gap-2 text-sm font-light text-[#1C1C1E]">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1022,7 +1022,7 @@ const ListingDetails = () => {
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12 sm:pb-16">
         {/* Title and Location */}
-        <div className="mb-6 sm:mb-8">
+        <section className="mb-8 sm:mb-12">
           <div className="flex items-start justify-between gap-4 mb-3 sm:mb-4">
             <h1 className="text-3xl sm:text-4xl lg:text-5xl font-light text-[#1C1C1E] tracking-tight flex-1">
               {listing.title}
@@ -1056,10 +1056,10 @@ const ListingDetails = () => {
             <span>•</span>
             <span>Hosted by {hostName}</span>
           </div>
-        </div>
+        </section>
 
         {/* Image Gallery */}
-        <div className="mb-8 sm:mb-12">
+        <section className="mb-10 sm:mb-16">
           {listingImages.length > 0 ? (
             listingImages.length === 1 ? (
               // Single image - full width
@@ -1106,7 +1106,7 @@ const ListingDetails = () => {
                   🏠
                 </div>
               )}
-            </div>
+        </section>
 
         {/* Fullscreen Image Modal */}
         {showFullscreenImage && listingImages.length > 0 && (
@@ -1171,66 +1171,67 @@ const ListingDetails = () => {
         )}
 
         {/* Two Column Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 sm:gap-12">
-          {/* Left Column - Content Sections */}
-          <div className="lg:col-span-2 space-y-8 sm:space-y-12">
+        <section className="mt-12 sm:mt-16">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 sm:gap-12">
+            {/* Left Column - Content Sections */}
+            <div className="lg:col-span-2">
 
-            {/* About this place */}
-            <div>
-              <h2 className="text-2xl sm:text-3xl font-light text-[#1C1C1E] mb-4 sm:mb-6">About this place</h2>
-              <p className="text-base sm:text-lg text-[#1C1C1E]/70 font-light leading-relaxed whitespace-pre-line">
-                {listing.description || "No description available."}
-              </p>
-            </div>
+              {/* About this place */}
+              <section className="mb-12 sm:mb-16">
+                <h2 className="text-2xl sm:text-3xl font-light text-[#1C1C1E] mb-6 sm:mb-8">About this place</h2>
+                <p className="text-base sm:text-lg text-[#1C1C1E]/70 font-light leading-relaxed whitespace-pre-line">
+                  {listing.description || "No description available."}
+                </p>
+              </section>
 
-            {/* What this place offers */}
-            <div>
-              <h2 className="text-2xl sm:text-3xl font-light text-[#1C1C1E] mb-4 sm:mb-6">What this place offers</h2>
-              <div className="space-y-4">
-            {/* Experiences */}
-            {listing.experiences && listing.experiences.length > 0 && (
-                  <div>
-                    <h3 className="text-lg font-medium text-[#1C1C1E] mb-3">Experiences</h3>
-                <ul className="space-y-2">
-                  {listing.experiences.map((exp, index) => (
-                        <li key={index} className="flex items-center gap-3 text-[#1C1C1E]/70 font-light">
-                          <svg className="w-5 h-5 text-[#34C759] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                          <span>{exp}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {/* Services */}
-            {listing.services && listing.services.length > 0 && (
-                  <div>
-                    <h3 className="text-lg font-medium text-[#1C1C1E] mb-3">Services</h3>
-                <ul className="space-y-2">
-                  {listing.services.map((serv, index) => (
-                        <li key={index} className="flex items-center gap-3 text-[#1C1C1E]/70 font-light">
-                          <svg className="w-5 h-5 text-[#34C759] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                          <span>{serv}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-                {(!listing.experiences || listing.experiences.length === 0) && (!listing.services || listing.services.length === 0) && (
-                  <p className="text-[#1C1C1E]/50 font-light">No experiences or services listed.</p>
-                )}
-              </div>
-            </div>
+              {/* What this place offers */}
+              <section className="mb-12 sm:mb-16 pt-8 sm:pt-12 border-t border-gray-200">
+                <h2 className="text-2xl sm:text-3xl font-light text-[#1C1C1E] mb-6 sm:mb-8">What this place offers</h2>
+                <div className="space-y-6">
+                  {/* Experiences */}
+                  {listing.experiences && listing.experiences.length > 0 && (
+                    <div>
+                      <h3 className="text-lg font-medium text-[#1C1C1E] mb-4">Experiences</h3>
+                      <ul className="space-y-3">
+                        {listing.experiences.map((exp, index) => (
+                          <li key={index} className="flex items-center gap-3 text-[#1C1C1E]/70 font-light">
+                            <svg className="w-5 h-5 text-[#34C759] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            <span>{exp}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {/* Services */}
+                  {listing.services && listing.services.length > 0 && (
+                    <div>
+                      <h3 className="text-lg font-medium text-[#1C1C1E] mb-4">Services</h3>
+                      <ul className="space-y-3">
+                        {listing.services.map((serv, index) => (
+                          <li key={index} className="flex items-center gap-3 text-[#1C1C1E]/70 font-light">
+                            <svg className="w-5 h-5 text-[#34C759] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            <span>{serv}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {(!listing.experiences || listing.experiences.length === 0) && (!listing.services || listing.services.length === 0) && (
+                    <p className="text-[#1C1C1E]/50 font-light">No experiences or services listed.</p>
+                  )}
+                </div>
+              </section>
 
-            {/* Amenities */}
-            <div>
-              <h2 className="text-2xl sm:text-3xl font-light text-[#1C1C1E] mb-4 sm:mb-6">Amenities</h2>
+              {/* Amenities */}
+              <section className="mb-12 sm:mb-16 pt-8 sm:pt-12 border-t border-gray-200">
+                <h2 className="text-2xl sm:text-3xl font-light text-[#1C1C1E] mb-6 sm:mb-8">Amenities</h2>
               <p className="text-base text-[#1C1C1E]/70 font-light">
                 {listing.amenities && listing.amenities.length > 0 ? (
-                  <ul className="space-y-2">
+                  <ul className="space-y-3">
                     {listing.amenities.map((amenity, index) => (
                       <li key={index} className="flex items-center gap-3">
                         <svg className="w-5 h-5 text-[#34C759] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1244,26 +1245,26 @@ const ListingDetails = () => {
                   "No amenities listed."
                 )}
               </p>
-          </div>
+              </section>
 
-            {/* Google Maps */}
-            <div>
-              <div className="flex items-center justify-between mb-4 sm:mb-6">
-                <h2 className="text-2xl sm:text-3xl font-light text-[#1C1C1E]">Location</h2>
-                <a
-                  href={getDirectionsUrl()}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-4 sm:px-6 py-2.5 sm:py-3 bg-[#0071E3] text-white rounded-xl text-sm sm:text-base font-medium hover:bg-[#0051D0] transition-all duration-200 flex items-center gap-2 shadow-sm hover:shadow-md"
-                >
-                  <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                  </svg>
-                  Get Directions
-                </a>
-              </div>
-              <p className="text-base text-[#1C1C1E]/70 font-light mb-4">{listing.location}</p>
-              <div className="w-full h-[400px] sm:h-[500px] rounded-2xl overflow-hidden bg-gray-100">
+              {/* Google Maps */}
+              <section className="mb-12 sm:mb-16 pt-8 sm:pt-12 border-t border-gray-200">
+                <div className="flex items-center justify-between mb-4 sm:mb-6">
+                  <h2 className="text-2xl sm:text-3xl font-light text-[#1C1C1E]">Location</h2>
+                  <a
+                    href={getDirectionsUrl()}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 sm:px-6 py-2.5 sm:py-3 bg-[#0071E3] text-white rounded-xl text-sm sm:text-base font-medium hover:bg-[#0051D0] transition-all duration-200 flex items-center gap-2 shadow-sm hover:shadow-md"
+                  >
+                    <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                    </svg>
+                    Get Directions
+                  </a>
+                </div>
+                <p className="text-base text-[#1C1C1E]/70 font-light mb-4">{listing.location}</p>
+                <div className="w-full h-[400px] sm:h-[500px] rounded-2xl overflow-hidden bg-gray-100">
                 {GOOGLE_MAPS_API_KEY && GOOGLE_MAPS_API_KEY !== "YOUR_GOOGLE_MAPS_API_KEY_HERE" ? (
                   <LoadScript googleMapsApiKey={GOOGLE_MAPS_API_KEY}>
                     <GoogleMap
@@ -1305,12 +1306,12 @@ const ListingDetails = () => {
                     </div>
                   </div>
                 )}
-            </div>
-          </div>
+                </div>
+              </section>
 
-            {/* Reviews Section */}
-            <div className="pt-8 sm:pt-12 border-t border-gray-200">
-              <div className="flex items-center justify-between mb-4 sm:mb-6">
+              {/* Reviews Section */}
+              <section className="mb-12 sm:mb-16 pt-8 sm:pt-12 border-t border-gray-200">
+                <div className="flex items-center justify-between mb-4 sm:mb-6">
                 <h2 className="text-2xl sm:text-3xl font-light text-[#1C1C1E]">Reviews</h2>
                 {currentUser && (
                   <button
@@ -1420,12 +1421,12 @@ const ListingDetails = () => {
                   </div>
                 </>
               )}
-            </div>
+              </section>
 
-            {/* Host Section */}
-            <div className="pt-8 sm:pt-12 border-t border-gray-200">
-              <h2 className="text-2xl sm:text-3xl font-light text-[#1C1C1E] mb-6 sm:mb-8">Meet your host</h2>
-              <div className="flex flex-col sm:flex-row gap-6 sm:gap-8">
+              {/* Host Section */}
+              <section className="mb-12 sm:mb-16 pt-8 sm:pt-12 border-t border-gray-200">
+                <h2 className="text-2xl sm:text-3xl font-light text-[#1C1C1E] mb-6 sm:mb-8">Meet your host</h2>
+                <div className="flex flex-col sm:flex-row gap-6 sm:gap-8">
                 <div className="flex-shrink-0">
                   <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-[#0071E3] flex items-center justify-center text-white text-xl sm:text-2xl font-medium">
                     {hostInitials}
@@ -1488,14 +1489,14 @@ const ListingDetails = () => {
                     Always communicate through the platform to protect your booking and payment
                   </p>
                 </div>
-              </div>
+                </div>
+              </section>
             </div>
-          </div>
 
-          {/* Right Column - Availability Calendar & Booking Widget */}
-          <div className="lg:sticky lg:top-24 space-y-6">
-            {/* Availability Calendar */}
-            <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-sm border border-gray-100">
+            {/* Right Column - Availability Calendar & Booking Widget */}
+            <div className="lg:sticky lg:top-24 space-y-8">
+              {/* Availability Calendar */}
+              <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-sm border border-gray-100">
               <div className="flex items-center gap-2 mb-6">
                 <svg className="w-5 h-5 text-[#1C1C1E]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -1600,11 +1601,11 @@ const ListingDetails = () => {
                   <span>Past</span>
                 </div>
               </div>
-            </div>
+              </div>
 
-            {/* Booking Widget */}
-            <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-lg border border-gray-100">
-              <div className="mb-6">
+              {/* Booking Widget */}
+              <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-lg border border-gray-100">
+                <div className="mb-6">
                 <div className="flex items-baseline gap-2 mb-2">
                   <span className="text-3xl sm:text-4xl font-light text-[#1C1C1E]">${listing.price}</span>
                   <span className="text-base sm:text-lg text-[#1C1C1E]/60 font-light">
@@ -1975,8 +1976,9 @@ const ListingDetails = () => {
                 </div>
               )}
             </div>
+            </div>
           </div>
-        </div>
+        </section>
       </div>
 
       {/* Loading Overlay */}

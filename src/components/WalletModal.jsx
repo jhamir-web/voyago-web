@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import { doc, getDoc, updateDoc, addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, updateDoc, addDoc, collection, serverTimestamp, query, where, getDocs, orderBy } from "firebase/firestore";
 import { db } from "../firebase";
 import { PayPalButtons, PayPalScriptProvider } from "@paypal/react-paypal-js";
 import { PAYPAL_CLIENT_ID } from "../config/paypal";
@@ -132,6 +132,72 @@ const WalletModal = ({ isOpen, onClose }) => {
       };
 
       const requestRef = await addDoc(collection(db, "withdrawalRequests"), withdrawalRequest);
+
+      // Link admin payments to this withdrawal request (oldest first, up to withdrawal amount)
+      try {
+        // Try with orderBy first, fallback to sorting in memory if index is missing
+        let adminPaymentsSnapshot;
+        try {
+          const adminPaymentsQuery = query(
+            collection(db, "adminPayments"),
+            where("hostId", "==", currentUser.uid),
+            where("withdrawalRequestId", "==", null),
+            orderBy("createdAt", "asc")
+          );
+          adminPaymentsSnapshot = await getDocs(adminPaymentsQuery);
+        } catch (orderByError) {
+          // If orderBy fails (missing index), fetch without it and sort in memory
+          console.warn("orderBy failed, fetching and sorting in memory:", orderByError);
+          const adminPaymentsQuery = query(
+            collection(db, "adminPayments"),
+            where("hostId", "==", currentUser.uid),
+            where("withdrawalRequestId", "==", null)
+          );
+          const unsortedSnapshot = await getDocs(adminPaymentsQuery);
+          
+          // Sort by createdAt in memory and create a new snapshot-like object
+          const sortedDocs = [...unsortedSnapshot.docs].sort((a, b) => {
+            const aTime = a.data().createdAt?.toDate?.() || new Date(0);
+            const bTime = b.data().createdAt?.toDate?.() || new Date(0);
+            return aTime - bTime;
+          });
+          
+          // Create a snapshot-like object with sorted docs
+          adminPaymentsSnapshot = {
+            docs: sortedDocs,
+            empty: sortedDocs.length === 0,
+            size: sortedDocs.length
+          };
+        }
+        
+        let remainingAmount = amount;
+        const paymentsToLink = [];
+        
+        for (const paymentDoc of adminPaymentsSnapshot.docs) {
+          if (remainingAmount <= 0) break;
+          
+          const paymentData = paymentDoc.data();
+          const paymentAmount = paymentData.amount || 0;
+          
+          paymentsToLink.push({
+            id: paymentDoc.id,
+            amount: paymentAmount
+          });
+          
+          remainingAmount -= paymentAmount;
+        }
+        
+        // Link all payments that sum up to the withdrawal amount
+        for (const payment of paymentsToLink) {
+          await updateDoc(doc(db, "adminPayments", payment.id), {
+            withdrawalRequestId: requestRef.id,
+            withdrawalRequestedAt: serverTimestamp()
+          });
+        }
+      } catch (error) {
+        console.error("Error linking admin payments to withdrawal:", error);
+        // Continue even if linking fails - the withdrawal request is still valid
+      }
 
       // Update user's PayPal email if not set
       const userRef = doc(db, "users", currentUser.uid);

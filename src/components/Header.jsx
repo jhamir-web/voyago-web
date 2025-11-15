@@ -78,17 +78,6 @@ const Header = () => {
               >
                 Favorites
               </Link>
-              <Link
-                to="#"
-                onClick={(e) => {
-                  e.preventDefault();
-                  // Placeholder for Wishlist - to be implemented later
-                }}
-                className="text-sm font-light text-white/60 hover:text-white/80 transition-colors duration-200 opacity-50 cursor-not-allowed"
-                title="Coming Soon"
-              >
-                Wishlist
-              </Link>
             </div>
 
             {/* Right Side - Icons & Actions */}
@@ -303,17 +292,6 @@ const Header = () => {
               className="block text-sm font-light text-white/90 hover:text-white transition-all duration-200 py-2 hover:translate-x-1"
             >
               Favorites
-            </Link>
-            <Link
-              to="#"
-              onClick={(e) => {
-                e.preventDefault();
-                setMobileMenuOpen(false);
-                // Placeholder for Wishlist - to be implemented later
-              }}
-              className="block text-sm font-light text-white/60 hover:text-white/80 transition-all duration-200 py-2 hover:translate-x-1 opacity-50"
-            >
-              Wishlist <span className="text-xs">(Coming Soon)</span>
             </Link>
             {currentUser ? (
               <>
