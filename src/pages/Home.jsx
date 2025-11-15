@@ -1094,11 +1094,11 @@ const Home = () => {
             </button>
           </div>
 
-          {/* Search & Filter Bar - Modern Design */}
+          {/* Search & Filter Bar - Web Style */}
           <div className="flex justify-center search-bar-container mt-4 sm:mt-6" style={{ overflow: 'visible', position: 'relative' }}>
-            <div className="w-full max-w-5xl px-2 sm:px-0" style={{ overflow: 'visible', position: 'relative' }}>
+            <div className="w-full max-w-5xl px-2 sm:px-4 md:px-6" style={{ overflow: 'visible', position: 'relative' }}>
               <div 
-                className={`flex flex-col sm:flex-row items-stretch sm:items-center bg-white rounded-2xl shadow-lg transition-all duration-300 ease-out ${
+                className={`flex flex-col md:flex-row items-stretch md:items-center bg-white rounded-2xl shadow-lg transition-all duration-300 ease-out ${
                   focusedField ? 'shadow-xl ring-2 ring-[#0071E3]/20' : 'hover:shadow-xl'
                 }`}
                 style={{ overflow: 'visible' }}
@@ -1111,19 +1111,17 @@ const Home = () => {
                   onClick={() => setFocusedField('where')}
                 >
                   {/* Right Divider */}
-                  <div className="absolute right-0 top-0 bottom-0 w-px bg-gray-300"></div>
-                  <div className="px-4 sm:px-5 py-3 sm:py-3.5 cursor-pointer hover:bg-gray-50/50 transition-all duration-200 rounded-l-2xl sm:rounded-l-2xl">
-                    <div className="flex items-center gap-3">
+                  <div className="absolute right-0 top-0 bottom-0 w-px bg-gray-300 hidden md:block"></div>
+                  <div className="px-4 sm:px-5 md:px-6 py-3 sm:py-4 cursor-pointer hover:bg-gray-50/50 transition-all duration-200 rounded-t-2xl md:rounded-t-none md:rounded-l-2xl">
+                    <div className="flex items-center gap-2 sm:gap-3">
                       <svg 
-                        className={`w-4 h-4 flex-shrink-0 transition-all duration-300 ${
+                        className={`w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0 transition-all duration-300 ${
                           focusedField === 'where' || searchQuery ? 'text-[#0071E3]' : 'text-[#8E8E93]'
                         }`}
                         fill="currentColor" 
                         viewBox="0 0 24 24"
                       >
                         <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
-                        <circle cx="12" cy="9" r="3" fill="none" stroke="white" strokeWidth="1.5" opacity="0.9"/>
-                        <circle cx="12" cy="9" r="1.5" fill="white"/>
                       </svg>
                       <div className="flex-1 min-w-0">
                         <input
@@ -1133,7 +1131,7 @@ const Home = () => {
                           onChange={(e) => setSearchQuery(e.target.value)}
                           onFocus={() => setFocusedField('where')}
                           onBlur={() => setTimeout(() => setFocusedField(null), 200)}
-                          className="search-where-input w-full text-sm text-[#1C1C1E] placeholder:text-[#8E8E93] focus:outline-none bg-transparent font-light transition-all duration-200"
+                          className="search-where-input w-full text-sm sm:text-base text-[#1C1C1E] placeholder:text-[#8E8E93] focus:outline-none bg-transparent font-light transition-all duration-200"
                         />
                       </div>
                     </div>
@@ -1142,17 +1140,17 @@ const Home = () => {
 
                 {/* Available Dates - Single Calendar Input */}
                 <div 
-                  className={`flex-1 relative min-w-0 transition-all duration-300 ${
+                  className={`flex-1 relative min-w-0 transition-all duration-300 border-t md:border-t-0 border-gray-200/50 md:border-none ${
                     focusedField === 'dates' || showDatePicker ? 'bg-gray-50/50' : ''
                   }`}
                   style={{ zIndex: showDatePicker ? 50 : 'auto' }}
                 >
                   {/* Left Divider */}
-                  <div className="absolute left-0 top-0 bottom-0 w-px bg-gray-300"></div>
+                  <div className="absolute left-0 top-0 bottom-0 w-px bg-gray-300 hidden md:block"></div>
                   {/* Right Divider */}
-                  <div className="absolute right-0 top-0 bottom-0 w-px bg-gray-300"></div>
+                  <div className="absolute right-0 top-0 bottom-0 w-px bg-gray-300 hidden md:block"></div>
                   <div 
-                    className="px-4 sm:px-5 py-3 sm:py-3.5 cursor-pointer hover:bg-gray-50/50 transition-all duration-200"
+                    className="px-4 sm:px-5 md:px-6 py-3 sm:py-4 cursor-pointer hover:bg-gray-50/50 transition-all duration-200"
                     onClick={() => {
                       if (!showDatePicker) {
                         // Initialize calendar to show current month or selected date's month
@@ -1167,18 +1165,14 @@ const Home = () => {
                       setFocusedField('dates');
                     }}
                   >
-                    <div className="relative">
-                      <label className="block text-[10px] sm:text-xs font-semibold text-[#1C1C1E]/70 mb-1 uppercase tracking-wider">
-                        AVAILABLE DATES
-                      </label>
-                      <div className="relative">
-                        <span className={`text-sm font-light transition-all duration-200 block ${
-                          checkIn || checkOut ? 'text-[#1C1C1E]' : 'text-[#8E8E93]'
-                        }`}>
-                          {formatDateRangeDisplay()}
-                        </span>
-                      </div>
-                    </div>
+                    <label className="block text-[10px] sm:text-xs font-semibold text-[#1C1C1E]/70 mb-1 uppercase tracking-wider">
+                      Available Dates
+                    </label>
+                    <span className={`text-sm sm:text-base font-light transition-all duration-200 block ${
+                      checkIn || checkOut ? 'text-[#1C1C1E]' : 'text-[#8E8E93]'
+                    }`}>
+                      {checkIn || checkOut ? formatDateRangeDisplay() : 'Add dates'}
+                    </span>
                   </div>
 
                   {/* Date Picker Modal - Custom Calendar */}
@@ -1195,11 +1189,9 @@ const Home = () => {
                         }}
                       ></div>
                       <div 
-                        className="absolute left-0 sm:left-auto right-0 sm:right-auto top-full mt-2 w-full sm:w-auto bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-visible z-50"
+                        className="absolute left-0 md:left-auto right-0 md:right-auto top-full mt-2 w-full md:w-auto min-w-[320px] bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-visible z-50 animate-slideDownFadeIn"
                         onClick={(e) => e.stopPropagation()}
-                        style={{
-                          animation: 'slideDownFadeIn 0.3s ease-out',
-                        }}
+                        style={{ zIndex: 50 }}
                       >
                         <div className="p-4 sm:p-6">
                           {/* Calendar Header */}
@@ -1333,15 +1325,15 @@ const Home = () => {
 
                 {/* Guests - Dropdown */}
                 <div 
-                  className={`flex-1 relative min-w-0 transition-all duration-300 ${
+                  className={`flex-1 relative min-w-0 transition-all duration-300 border-t md:border-t-0 border-gray-200/50 md:border-none ${
                     focusedField === 'guests' || showGuestMenu ? 'bg-gray-50/50' : ''
                   }`}
                   style={{ zIndex: showGuestMenu ? 50 : 'auto' }}
                 >
                   {/* Left Divider */}
-                  <div className="absolute left-0 top-0 bottom-0 w-px bg-gray-300"></div>
+                  <div className="absolute left-0 top-0 bottom-0 w-px bg-gray-300 hidden md:block"></div>
                   <div 
-                    className="px-4 sm:px-5 py-3 sm:py-3.5 cursor-pointer hover:bg-gray-50/50 transition-all duration-200 rounded-r-2xl sm:rounded-r-0"
+                    className="px-4 sm:px-5 md:px-6 py-3 sm:py-4 cursor-pointer hover:bg-gray-50/50 transition-all duration-200 rounded-b-2xl md:rounded-b-none md:rounded-r-2xl"
                     onClick={() => {
                       setShowGuestMenu(!showGuestMenu);
                       setFocusedField('guests');
@@ -1351,14 +1343,14 @@ const Home = () => {
                       Guests
                     </label>
                     <div className="flex items-center justify-between">
-                      <span className={`text-sm font-light transition-all duration-200 ${
+                      <span className={`text-sm sm:text-base font-light transition-all duration-200 ${
                         guests > 1 ? 'text-[#1C1C1E]' : 'text-[#8E8E93]'
                       }`}>
                         {guests === 1 ? 'Add guests' : `${guests} ${guests === 1 ? 'guest' : 'guests'}`}
                       </span>
                       {guests > 1 && (
                         <svg 
-                          className={`w-4 h-4 text-[#8E8E93] transition-all duration-300 ${showGuestMenu ? 'rotate-180' : ''}`}
+                          className={`w-4 h-4 sm:w-5 sm:h-5 text-[#8E8E93] transition-all duration-300 ${showGuestMenu ? 'rotate-180' : ''}`}
                           fill="none" 
                           stroke="currentColor" 
                           viewBox="0 0 24 24"
@@ -1383,13 +1375,11 @@ const Home = () => {
                         }}
                       ></div>
                       <div 
-                        className="absolute right-0 sm:right-auto left-0 sm:left-auto top-full mt-2 w-full sm:w-64 bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-visible z-50"
+                        className="absolute right-0 md:right-auto left-0 md:left-auto top-full mt-2 w-full md:w-64 bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-visible z-50 animate-slideDownFadeIn"
                         onClick={(e) => e.stopPropagation()}
-                        style={{
-                          animation: 'slideDownFadeIn 0.3s ease-out',
-                        }}
+                        style={{ zIndex: 50 }}
                       >
-                        <div className="py-2">
+                        <div className="py-1">
                           {[1, 2, 3, 4, 5, 6].map((num) => (
                             <button
                               key={num}
@@ -1397,8 +1387,10 @@ const Home = () => {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setGuests(num);
+                                setShowGuestMenu(false);
+                                setFocusedField(null);
                               }}
-                              className={`w-full px-4 sm:px-6 py-3 text-left transition-all duration-200 ${
+                              className={`w-full px-4 sm:px-6 py-3 text-left transition-all duration-200 text-sm sm:text-base ${
                                 guests === num
                                   ? 'bg-[#0071E3] text-white font-medium'
                                   : 'text-[#1C1C1E] hover:bg-gray-50 font-light'
@@ -1408,7 +1400,7 @@ const Home = () => {
                             </button>
                           ))}
                         </div>
-                        <div className="px-4 sm:px-6 pb-2">
+                        <div className="px-4 sm:px-6 py-2 border-t border-gray-200">
                           <button
                             type="button"
                             onClick={(e) => {
@@ -1416,7 +1408,7 @@ const Home = () => {
                               setShowGuestMenu(false);
                               setFocusedField(null);
                             }}
-                            className="w-full mt-2 px-4 py-2.5 text-[#0071E3] rounded-xl text-sm font-medium hover:bg-[#0071E3]/10 transition-all duration-200"
+                            className="w-full px-4 py-2.5 text-[#0071E3] rounded-xl text-sm sm:text-base font-medium hover:bg-[#0071E3]/10 transition-all duration-200"
                           >
                             Cancel
                           </button>
@@ -1426,20 +1418,22 @@ const Home = () => {
                   )}
                 </div>
 
-                {/* Search Button - Circular */}
-                <div className="p-2 sm:p-3 flex-shrink-0 flex items-center justify-center">
+                {/* Search Button - Inline on Desktop, Bottom on Mobile */}
+                <div className="p-2 sm:p-3 md:p-2 flex items-center justify-center md:flex-shrink-0 border-t md:border-t-0 border-gray-200/50 md:border-none">
                   <button
                     type="button"
-                    className="flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 bg-[#0071E3] text-white rounded-full hover:bg-[#0051D0] transition-all duration-300 shadow-md hover:shadow-xl hover:scale-110 active:scale-95 transform"
+                    className="flex items-center justify-center w-full md:w-auto px-6 md:px-0 md:w-10 md:h-10 lg:w-11 lg:h-11 bg-[#0071E3] text-white rounded-full hover:bg-[#0051D0] transition-all duration-300 shadow-md hover:shadow-xl hover:scale-105 active:scale-95 transform py-3 md:py-0"
                     aria-label="Search"
                     onClick={() => {
-                      // Trigger search/filter
-                      const input = document.querySelector('.search-where-input');
-                      if (input) input.focus();
+                      // Scroll to listings or trigger search/filter
+                      const listingsSection = document.querySelector('.listing-section');
+                      if (listingsSection) {
+                        listingsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }
                     }}
                   >
                     <svg
-                      className="w-4 h-4 sm:w-4.5 sm:h-4.5"
+                      className="w-5 h-5 sm:w-6 sm:h-6 md:w-4 md:h-4"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -1447,6 +1441,7 @@ const Home = () => {
                     >
                       <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
+                    <span className="md:hidden ml-2 text-sm sm:text-base font-medium">Search</span>
                   </button>
                 </div>
               </div>

@@ -927,185 +927,184 @@ const ListingDetails = () => {
     <div className="min-h-screen bg-white">
       <Header />
       
-      {/* Share Button - Floating */}
-      <div className="fixed top-20 right-4 z-40">
-        <div className="relative">
-          <button 
-            onClick={() => setShowShareMenu(!showShareMenu)}
-            className="bg-black/90 backdrop-blur-xl text-white/90 hover:text-white transition-colors p-3 rounded-full shadow-lg hover:shadow-xl border border-white/10"
-            aria-label="Share listing"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-            </svg>
-          </button>
-
-          {/* Share Menu Dropdown */}
-          {showShareMenu && (
-            <>
-              {/* Backdrop to close menu */}
-              <div 
-                className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm animate-in fade-in duration-200" 
-                onClick={() => setShowShareMenu(false)}
-              ></div>
-              
-              {/* Dropdown Menu */}
-              <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden z-50 animate-slideDownFadeIn">
-                <div className="p-2">
-                  <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    Share this listing
-                  </div>
-                  
-                  {/* Copy Link */}
-                  <button
-                    onClick={handleCopyLink}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-[#1C1C1E] hover:bg-gray-50 rounded-xl transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] transform group"
-                    style={{
-                      animation: 'fadeInUp 0.3s ease-out 0.05s both'
-                    }}
-                  >
-                    <svg className="w-5 h-5 text-gray-600 transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                    <span>Copy link</span>
-                  </button>
-
-                  {/* Facebook */}
-                  <button
-                    onClick={handleShareFacebook}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-[#1C1C1E] hover:bg-gray-50 rounded-xl transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] transform group"
-                    style={{
-                      animation: 'fadeInUp 0.3s ease-out 0.1s both'
-                    }}
-                  >
-                    <svg className="w-5 h-5 text-[#1877F2] transition-transform duration-200 group-hover:scale-110" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-                    </svg>
-                    <span>Facebook</span>
-                  </button>
-
-                  {/* Email */}
-                  <button
-                    onClick={handleShareEmail}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-[#1C1C1E] hover:bg-gray-50 rounded-xl transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] transform group"
-                    style={{
-                      animation: 'fadeInUp 0.3s ease-out 0.15s both'
-                    }}
-                  >
-                    <svg className="w-5 h-5 text-gray-600 transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                    </svg>
-                    <span>Email</span>
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-
       {/* Category Filters */}
       {listing && (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-8 pb-4 sm:pb-6">
-          <div className="flex items-center gap-3 sm:gap-4">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 sm:pt-10 pb-6">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             {/* Category Badge - Home, Experience, or Service */}
             {(listing.placeType || listing.category === "place" || listing.category === "resort" || listing.category === "hotel" || listing.category === "transient" || (!listing.activityType && !listing.serviceType && listing.category)) && (
-              <button className="px-4 py-2 rounded-full bg-[#F5F5F7] hover:bg-gray-200 transition-colors flex items-center gap-2 text-sm font-light text-[#1C1C1E]">
+              <span className="px-4 py-2 rounded-full bg-[#F5F5F7] hover:bg-gray-200 transition-colors flex items-center gap-2 text-sm font-medium text-[#1C1C1E]">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
                 </svg>
                 {listing.activityType || listing.category === "experience" ? "Experience" : listing.serviceType || listing.category === "service" ? "Service" : "Home"}
-              </button>
+              </span>
             )}
             
             {/* Room Type Badge - Entire Home, Private Room, or Shared Room */}
             {listing.describePlace && (
-              <button className="px-4 py-2 rounded-full bg-[#F5F5F7] hover:bg-gray-200 transition-colors text-sm font-light text-[#1C1C1E]">
+              <span className="px-4 py-2 rounded-full bg-[#F5F5F7] hover:bg-gray-200 transition-colors text-sm font-medium text-[#1C1C1E]">
                 {listing.describePlace === "entire" ? "Entire Home" : 
                  listing.describePlace === "private" ? "Private Room" : 
                  listing.describePlace === "shared" ? "Shared Room" : 
                  listing.describePlace}
-              </button>
+              </span>
             )}
             
             {/* Experience Type Badge */}
             {listing.activityType && (
-              <button className="px-4 py-2 rounded-full bg-[#F5F5F7] hover:bg-gray-200 transition-colors text-sm font-light text-[#1C1C1E]">
+              <span className="px-4 py-2 rounded-full bg-[#F5F5F7] hover:bg-gray-200 transition-colors text-sm font-medium text-[#1C1C1E]">
                 {listing.activityType}
-              </button>
+              </span>
             )}
             
             {/* Service Type Badge */}
             {listing.serviceType && (
-              <button className="px-4 py-2 rounded-full bg-[#F5F5F7] hover:bg-gray-200 transition-colors text-sm font-light text-[#1C1C1E]">
+              <span className="px-4 py-2 rounded-full bg-[#F5F5F7] hover:bg-gray-200 transition-colors text-sm font-medium text-[#1C1C1E]">
                 {listing.serviceType}
-              </button>
+              </span>
             )}
           </div>
         </div>
       )}
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12 sm:pb-16">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-16 sm:pb-20">
         {/* Title and Location */}
-        <section className="mb-8 sm:mb-12">
-          <div className="flex items-start justify-between gap-4 mb-3 sm:mb-4">
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-light text-[#1C1C1E] tracking-tight flex-1">
-              {listing.title}
-            </h1>
-            {/* Favorite Button */}
-            <button
-              onClick={handleToggleFavorite}
-              className="flex-shrink-0 p-3 bg-white/90 backdrop-blur-md rounded-full hover:bg-white transition-all duration-300 shadow-lg hover:scale-110 border border-gray-200"
-              aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
-            >
-              <svg
-                className={`w-6 h-6 transition-all duration-300 ${
-                  isFavorite ? "fill-red-500 text-red-500 scale-110" : "text-[#1C1C1E]"
-                }`}
-                fill={isFavorite ? "currentColor" : "none"}
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+        <section className="mb-10 sm:mb-14">
+          <div className="flex items-start justify-between gap-6 mb-4 sm:mb-5">
+            <div className="flex-1 min-w-0">
+              <h1 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-light text-[#1C1C1E] tracking-tight leading-tight mb-3 sm:mb-4">
+                {listing.title}
+              </h1>
+              <div className="flex flex-wrap items-center gap-3 text-base sm:text-lg text-[#8E8E93] font-light">
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  <span className="text-[#1C1C1E] font-medium">{listing.location}</span>
+                </div>
+                <span className="text-[#D1D1D6]">•</span>
+                <span>Hosted by <span className="text-[#1C1C1E] font-medium">{hostName}</span></span>
+              </div>
+            </div>
+            {/* Favorite and Share Buttons */}
+            <div className="flex items-center gap-3 flex-shrink-0">
+              {/* Share Button */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowShareMenu(!showShareMenu)}
+                  className="p-3 sm:p-3.5 bg-white rounded-full hover:bg-gray-50 transition-all duration-300 shadow-md hover:shadow-lg border border-gray-200 hover:border-gray-300"
+                  aria-label="Share listing"
+                >
+                  <svg className="w-6 h-6 sm:w-7 sm:h-7 text-[#1C1C1E] transition-transform duration-300 hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                  </svg>
+                </button>
+
+                {/* Share Menu Dropdown */}
+                {showShareMenu && (
+                  <>
+                    {/* Backdrop to close menu */}
+                    <div 
+                      className="fixed inset-0 z-40 bg-black/20 animate-fadeIn" 
+                      onClick={() => setShowShareMenu(false)}
+                    ></div>
+                    
+                    {/* Dropdown Menu */}
+                    <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden z-50 animate-slideDownFadeIn origin-top-right">
+                      <div className="p-2">
+                        <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                          Share this listing
+                        </div>
+                        
+                        {/* Copy Link */}
+                        <button
+                          onClick={handleCopyLink}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-[#1C1C1E] hover:bg-gray-50 rounded-xl transition-all duration-200 group"
+                        >
+                          <svg className="w-5 h-5 text-gray-600 transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
+                          <span className="font-medium">Copy link</span>
+                        </button>
+
+                        {/* Facebook */}
+                        <button
+                          onClick={handleShareFacebook}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-[#1C1C1E] hover:bg-gray-50 rounded-xl transition-all duration-200 group"
+                        >
+                          <svg className="w-5 h-5 text-[#1877F2] transition-transform duration-200 group-hover:scale-110" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                          </svg>
+                          <span className="font-medium">Facebook</span>
+                        </button>
+
+                        {/* Email */}
+                        <button
+                          onClick={handleShareEmail}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-[#1C1C1E] hover:bg-gray-50 rounded-xl transition-all duration-200 group"
+                        >
+                          <svg className="w-5 h-5 text-gray-600 transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                          </svg>
+                          <span className="font-medium">Email</span>
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Favorite Button */}
+              <button
+                onClick={handleToggleFavorite}
+                className="p-3 sm:p-3.5 bg-white rounded-full hover:bg-gray-50 transition-all duration-300 shadow-md hover:shadow-lg border border-gray-200 hover:border-gray-300"
+                aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
-                />
-              </svg>
-            </button>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 text-base sm:text-lg text-[#1C1C1E]/70 font-light">
-            <span>•</span>
-            <span>{listing.location}</span>
-            <span>•</span>
-            <span>Hosted by {hostName}</span>
+                <svg
+                  className={`w-6 h-6 sm:w-7 sm:h-7 transition-all duration-300 hover:scale-110 ${
+                    isFavorite ? "fill-red-500 text-red-500" : "text-[#1C1C1E]"
+                  }`}
+                  fill={isFavorite ? "currentColor" : "none"}
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+                  />
+                </svg>
+              </button>
+            </div>
           </div>
         </section>
 
         {/* Image Gallery */}
-        <section className="mb-10 sm:mb-16">
+        <section className="mb-12 sm:mb-16">
           {listingImages.length > 0 ? (
             listingImages.length === 1 ? (
               // Single image - full width
-              <div className="w-full h-[300px] sm:h-[400px] lg:h-[500px] rounded-2xl overflow-hidden bg-gray-100">
+              <div className="w-full h-[400px] sm:h-[500px] lg:h-[600px] rounded-2xl sm:rounded-3xl overflow-hidden bg-gray-100 shadow-lg">
                 <img
                   src={listingImages[0]}
                   alt={listing.title}
-                  className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                  className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-500"
                   onClick={() => setShowFullscreenImage(true)}
                 />
               </div>
             ) : (
               // Multiple images - grid layout
-              <div className="grid grid-cols-4 gap-2 sm:gap-3 h-[300px] sm:h-[400px] lg:h-[500px]">
+              <div className="grid grid-cols-4 gap-2 sm:gap-3 h-[400px] sm:h-[500px] lg:h-[600px]">
                 {/* Main Image */}
-                <div className="col-span-4 sm:col-span-2 row-span-2 rounded-2xl overflow-hidden bg-gray-100">
+                <div className="col-span-4 sm:col-span-2 row-span-2 rounded-2xl sm:rounded-3xl overflow-hidden bg-gray-100 shadow-lg cursor-pointer group">
                   <img
                     src={listingImages[selectedImageIndex] || listingImages[0]}
                     alt={listing.title}
-                    className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     onClick={() => setShowFullscreenImage(true)}
                   />
                 </div>
@@ -1113,25 +1112,25 @@ const ListingDetails = () => {
                 {listingImages.slice(0, 3).map((img, index) => (
                   <div
                     key={index}
-                    className={`col-span-2 sm:col-span-1 rounded-2xl overflow-hidden bg-gray-100 cursor-pointer transition-opacity ${
-                      selectedImageIndex === index ? 'ring-2 ring-[#0071E3]' : 'opacity-70 hover:opacity-100'
+                    className={`col-span-2 sm:col-span-1 rounded-2xl sm:rounded-3xl overflow-hidden bg-gray-100 cursor-pointer transition-all duration-300 ${
+                      selectedImageIndex === index ? 'ring-2 ring-[#0071E3] ring-offset-2 opacity-100' : 'opacity-75 hover:opacity-100 hover:ring-2 hover:ring-gray-300'
                     }`}
                     onClick={() => setSelectedImageIndex(index)}
                   >
                     <img
                       src={img}
                       alt={`${listing.title} ${index + 1}`}
-                  className="w-full h-full object-cover"
-                />
+                      className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
+                    />
                   </div>
                 ))}
               </div>
             )
-              ) : (
-            <div className="w-full h-[300px] sm:h-[400px] lg:h-[500px] rounded-2xl flex items-center justify-center text-6xl bg-gradient-to-br from-gray-50 to-gray-100">
-                  🏠
-                </div>
-              )}
+          ) : (
+            <div className="w-full h-[400px] sm:h-[500px] lg:h-[600px] rounded-2xl sm:rounded-3xl flex items-center justify-center text-6xl bg-gradient-to-br from-gray-50 to-gray-100 shadow-lg">
+              🏠
+            </div>
+          )}
         </section>
 
         {/* Fullscreen Image Modal */}
@@ -1203,94 +1202,99 @@ const ListingDetails = () => {
             <div className="lg:col-span-2">
 
               {/* About this place */}
-              <section className="mb-12 sm:mb-16">
-                <h2 className="text-2xl sm:text-3xl font-light text-[#1C1C1E] mb-6 sm:mb-8">About this place</h2>
-                <p className="text-base sm:text-lg text-[#1C1C1E]/70 font-light leading-relaxed whitespace-pre-line">
-                  {listing.description || "No description available."}
-                </p>
-              </section>
-
-              {/* What this place offers */}
-              <section className="mb-12 sm:mb-16 pt-8 sm:pt-12 border-t border-gray-200">
-                <h2 className="text-2xl sm:text-3xl font-light text-[#1C1C1E] mb-6 sm:mb-8">What this place offers</h2>
-                <div className="space-y-6">
-                  {/* Experiences */}
-                  {listing.experiences && listing.experiences.length > 0 && (
-                    <div>
-                      <h3 className="text-lg font-medium text-[#1C1C1E] mb-4">Experiences</h3>
-                      <ul className="space-y-3">
-                        {listing.experiences.map((exp, index) => (
-                          <li key={index} className="flex items-center gap-3 text-[#1C1C1E]/70 font-light">
-                            <svg className="w-5 h-5 text-[#34C759] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                            <span>{exp}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {/* Services */}
-                  {listing.services && listing.services.length > 0 && (
-                    <div>
-                      <h3 className="text-lg font-medium text-[#1C1C1E] mb-4">Services</h3>
-                      <ul className="space-y-3">
-                        {listing.services.map((serv, index) => (
-                          <li key={index} className="flex items-center gap-3 text-[#1C1C1E]/70 font-light">
-                            <svg className="w-5 h-5 text-[#34C759] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                            <span>{serv}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {(!listing.experiences || listing.experiences.length === 0) && (!listing.services || listing.services.length === 0) && (
-                    <p className="text-[#1C1C1E]/50 font-light">No experiences or services listed.</p>
-                  )}
+              <section className="mb-14 sm:mb-16">
+                <h2 className="text-2xl sm:text-3xl lg:text-4xl font-light text-[#1C1C1E] mb-6 sm:mb-8 pb-4 border-b border-gray-200">
+                  About this place
+                </h2>
+                <div className="prose prose-lg max-w-none">
+                  <p className="text-base sm:text-lg text-[#1C1C1E] font-light leading-relaxed whitespace-pre-line">
+                    {listing.description || "No description available."}
+                  </p>
                 </div>
               </section>
 
+              {/* What this place offers - Only show for Experiences or Services, not Homes */}
+              {((listing.activityType || listing.category === "experience") || (listing.serviceType || listing.category === "service")) && (
+                <section className="mb-14 sm:mb-16 pt-10 sm:pt-12 border-t border-gray-200">
+                  <h2 className="text-2xl sm:text-3xl lg:text-4xl font-light text-[#1C1C1E] mb-8 pb-4 border-b border-gray-200">
+                    What this place offers
+                  </h2>
+                  <div className="space-y-8">
+                    {/* Experiences */}
+                    {listing.experiences && listing.experiences.length > 0 && (
+                      <div>
+                        <h3 className="text-lg sm:text-xl font-semibold text-[#1C1C1E] mb-5">Experiences</h3>
+                        <ul className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {listing.experiences.map((exp, index) => (
+                            <li key={index} className="flex items-start gap-3 text-[#1C1C1E] font-light">
+                              <svg className="w-5 h-5 text-[#34C759] flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                              <span className="text-base">{exp}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {/* Services */}
+                    {listing.services && listing.services.length > 0 && (
+                      <div>
+                        <h3 className="text-lg sm:text-xl font-semibold text-[#1C1C1E] mb-5">Services</h3>
+                        <ul className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {listing.services.map((serv, index) => (
+                            <li key={index} className="flex items-start gap-3 text-[#1C1C1E] font-light">
+                              <svg className="w-5 h-5 text-[#34C759] flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                              <span className="text-base">{serv}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              )}
+
               {/* Amenities */}
-              <section className="mb-12 sm:mb-16 pt-8 sm:pt-12 border-t border-gray-200">
-                <h2 className="text-2xl sm:text-3xl font-light text-[#1C1C1E] mb-6 sm:mb-8">Amenities</h2>
-              <p className="text-base text-[#1C1C1E]/70 font-light">
+              <section className="mb-14 sm:mb-16 pt-10 sm:pt-12 border-t border-gray-200">
+                <h2 className="text-2xl sm:text-3xl lg:text-4xl font-light text-[#1C1C1E] mb-8 pb-4 border-b border-gray-200">
+                  Amenities
+                </h2>
                 {listing.amenities && listing.amenities.length > 0 ? (
-                  <ul className="space-y-3">
+                  <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {listing.amenities.map((amenity, index) => (
-                      <li key={index} className="flex items-center gap-3">
-                        <svg className="w-5 h-5 text-[#34C759] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <li key={index} className="flex items-start gap-3 text-[#1C1C1E] font-light">
+                        <svg className="w-5 h-5 text-[#34C759] flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                         </svg>
-                        <span>{amenity}</span>
+                        <span className="text-base">{amenity}</span>
                       </li>
                     ))}
                   </ul>
                 ) : (
-                  "No amenities listed."
+                  <p className="text-[#8E8E93] font-light text-base">No amenities listed.</p>
                 )}
-              </p>
               </section>
 
               {/* Google Maps */}
-              <section className="mb-12 sm:mb-16 pt-8 sm:pt-12 border-t border-gray-200">
-                <div className="flex items-center justify-between mb-4 sm:mb-6">
-                  <h2 className="text-2xl sm:text-3xl font-light text-[#1C1C1E]">Location</h2>
+              <section className="mb-14 sm:mb-16 pt-10 sm:pt-12 border-t border-gray-200">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 sm:mb-8 pb-4 border-b border-gray-200">
+                  <h2 className="text-2xl sm:text-3xl lg:text-4xl font-light text-[#1C1C1E]">Location</h2>
                   <a
                     href={getDirectionsUrl()}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="px-4 sm:px-6 py-2.5 sm:py-3 bg-[#0071E3] text-white rounded-xl text-sm sm:text-base font-medium hover:bg-[#0051D0] transition-all duration-200 flex items-center gap-2 shadow-sm hover:shadow-md"
+                    className="inline-flex items-center justify-center gap-2 px-5 sm:px-6 py-3 bg-[#0071E3] text-white rounded-xl text-sm sm:text-base font-medium hover:bg-[#0051D0] transition-all duration-200 shadow-md hover:shadow-lg"
                   >
-                    <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
                     </svg>
                     Get Directions
                   </a>
                 </div>
-                <p className="text-base text-[#1C1C1E]/70 font-light mb-4">{listing.location}</p>
-                <div className="w-full h-[400px] sm:h-[500px] rounded-2xl overflow-hidden bg-gray-100">
+                <p className="text-base sm:text-lg text-[#1C1C1E] font-medium mb-5">{listing.location}</p>
+                <div className="w-full h-[400px] sm:h-[500px] rounded-2xl sm:rounded-3xl overflow-hidden bg-gray-100 shadow-lg border border-gray-200">
                 {GOOGLE_MAPS_API_KEY && GOOGLE_MAPS_API_KEY !== "YOUR_GOOGLE_MAPS_API_KEY_HERE" ? (
                   <LoadScript googleMapsApiKey={GOOGLE_MAPS_API_KEY}>
                     <GoogleMap
@@ -1336,17 +1340,17 @@ const ListingDetails = () => {
               </section>
 
               {/* Reviews Section */}
-              <section className="mb-12 sm:mb-16 pt-8 sm:pt-12 border-t border-gray-200">
-                <div className="flex items-center justify-between mb-4 sm:mb-6">
-                <h2 className="text-2xl sm:text-3xl font-light text-[#1C1C1E]">Reviews</h2>
-                {currentUser && (
-                  <button
-                    onClick={() => setShowReviewModal(true)}
-                    className="px-4 py-2 bg-[#0071E3] text-white rounded-xl text-sm font-medium hover:bg-[#0051D0] transition-colors"
-                  >
-                    Write a Review
-                  </button>
-                )}
+              <section className="mb-14 sm:mb-16 pt-10 sm:pt-12 border-t border-gray-200">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8 pb-4 border-b border-gray-200">
+                  <h2 className="text-2xl sm:text-3xl lg:text-4xl font-light text-[#1C1C1E]">Reviews</h2>
+                  {currentUser && (
+                    <button
+                      onClick={() => setShowReviewModal(true)}
+                      className="inline-flex items-center justify-center px-5 py-3 bg-[#0071E3] text-white rounded-xl text-sm sm:text-base font-medium hover:bg-[#0051D0] transition-all duration-200 shadow-md hover:shadow-lg"
+                    >
+                      Write a Review
+                    </button>
+                  )}
                 </div>
               
               {reviews.length > 0 ? (
@@ -1378,44 +1382,40 @@ const ListingDetails = () => {
                   
                   <div className="space-y-8 sm:space-y-10">
                     {reviews.map((review) => (
-                      <div key={review.id} className="border-b border-gray-200 pb-6 sm:pb-8 last:border-0">
-                        <div className="flex items-start justify-between mb-4">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-2">
-                              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-[#0071E3] flex items-center justify-center text-white text-sm sm:text-base font-medium">
-                                {(review.userName || review.userEmail?.split('@')[0] || "A")[0].toUpperCase()}
-                              </div>
-                              <div>
-                                <h4 className="font-medium text-base sm:text-lg text-[#1C1C1E] mb-1">
-                                  {review.userName || review.userEmail?.split('@')[0] || "Anonymous"}
-                                </h4>
-                                <div className="flex items-center gap-2">
-                                  <div className="flex items-center">
-                                    {[...Array(5)].map((_, i) => (
-                                      <svg
-                                        key={i}
-                                        className={`w-4 h-4 sm:w-5 sm:h-5 ${
-                                          i < review.rating
-                                            ? "text-yellow-400 fill-yellow-400"
-                                            : "text-gray-300"
-                                        }`}
-                                        fill="currentColor"
-                                        viewBox="0 0 20 20"
-                                      >
-                                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                                      </svg>
-                                    ))}
-                                  </div>
-                                  <span className="text-xs sm:text-sm text-[#1C1C1E]/50 font-light">
-                                    {new Date(review.createdAt).toLocaleDateString('en-US', {
-                                      month: 'long',
-                                      year: 'numeric'
-                                    })}
-                                  </span>
-                                </div>
-                              </div>
+                      <div key={review.id} className="border-b border-gray-200 pb-8 sm:pb-10 last:border-0">
+                        <div className="flex items-start gap-4">
+                          <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-[#0071E3] flex items-center justify-center text-white text-base sm:text-lg font-semibold flex-shrink-0 shadow-md">
+                            {(review.userName || review.userEmail?.split('@')[0] || "A")[0].toUpperCase()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+                              <h4 className="font-semibold text-base sm:text-lg text-[#1C1C1E]">
+                                {review.userName || review.userEmail?.split('@')[0] || "Anonymous"}
+                              </h4>
+                              <span className="text-xs sm:text-sm text-[#8E8E93] font-light">
+                                {new Date(review.createdAt).toLocaleDateString('en-US', {
+                                  month: 'long',
+                                  year: 'numeric'
+                                })}
+                              </span>
                             </div>
-                            <p className="text-sm sm:text-base text-[#1C1C1E]/70 font-light leading-relaxed mt-3">
+                            <div className="flex items-center gap-2 mb-3">
+                              {[...Array(5)].map((_, i) => (
+                                <svg
+                                  key={i}
+                                  className={`w-5 h-5 ${
+                                    i < review.rating
+                                      ? "text-yellow-400 fill-yellow-400"
+                                      : "text-gray-300"
+                                  }`}
+                                  fill="currentColor"
+                                  viewBox="0 0 20 20"
+                                >
+                                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                                </svg>
+                              ))}
+                            </div>
+                            <p className="text-base sm:text-lg text-[#1C1C1E] font-light leading-relaxed">
                               {review.comment}
                             </p>
                           </div>
@@ -1450,71 +1450,70 @@ const ListingDetails = () => {
               </section>
 
               {/* Host Section */}
-              <section className="mb-12 sm:mb-16 pt-8 sm:pt-12 border-t border-gray-200">
-                <h2 className="text-2xl sm:text-3xl font-light text-[#1C1C1E] mb-6 sm:mb-8">Meet your host</h2>
+              <section className="mb-14 sm:mb-16 pt-10 sm:pt-12 border-t border-gray-200">
+                <h2 className="text-2xl sm:text-3xl lg:text-4xl font-light text-[#1C1C1E] mb-8 pb-4 border-b border-gray-200">Meet your host</h2>
                 <div className="flex flex-col sm:flex-row gap-6 sm:gap-8">
-                <div className="flex-shrink-0">
-                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-[#0071E3] flex items-center justify-center text-white text-xl sm:text-2xl font-medium">
-                    {hostInitials}
+                  <div className="flex-shrink-0">
+                    <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-[#0071E3] flex items-center justify-center text-white text-2xl sm:text-3xl font-semibold shadow-lg">
+                      {hostInitials}
+                    </div>
                   </div>
-                </div>
-                <div className="flex-1">
-                  <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
-                    <h3 className="text-xl sm:text-2xl font-light text-[#1C1C1E]">{hostName}</h3>
-                    <span className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs sm:text-sm font-medium flex items-center gap-1">
-                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                  <div className="flex-1">
+                    <div className="flex flex-wrap items-center gap-3 mb-4">
+                      <h3 className="text-xl sm:text-2xl lg:text-3xl font-semibold text-[#1C1C1E]">{hostName}</h3>
+                      <span className="px-3 py-1.5 bg-yellow-100 text-yellow-800 rounded-full text-xs sm:text-sm font-semibold flex items-center gap-1.5">
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                        </svg>
+                        Prime Host
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-5 sm:gap-6 mb-6 text-sm sm:text-base text-[#8E8E93] font-light">
+                      <span className="text-[#1C1C1E] font-medium">Reviews: 2</span>
+                      <span className="text-[#1C1C1E] font-medium">Rating: 5 stars</span>
+                      <span className="text-[#1C1C1E] font-medium">Experience: 0 years</span>
+                    </div>
+                    <div className="mb-6">
+                      <h4 className="text-lg sm:text-xl font-semibold text-[#1C1C1E] mb-3">About {hostName}</h4>
+                      <p className="text-base sm:text-lg text-[#1C1C1E] font-light leading-relaxed">
+                        {hostName} is an experienced and dedicated host committed to providing exceptional stays. They are highly rated and known for great communication and hospitality.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 mb-6">
+                      <div className="w-2.5 h-2.5 bg-[#34C759] rounded-full animate-pulse"></div>
+                      <span className="text-base sm:text-lg text-[#1C1C1E] font-light">Typically responds within a few hours</span>
+                    </div>
+                    {currentUser && (
+                      <button
+                        onClick={() => {
+                          if (bookingId) {
+                            navigate(`/chat/${bookingId}`);
+                          } else {
+                            // Navigate to chat with listing info for "Contact Host" without booking
+                            navigate('/chat', { 
+                              state: { 
+                                listingId: id, 
+                                hostId: listing.hostId,
+                                hostEmail: listing.hostEmail 
+                              } 
+                            });
+                          }
+                        }}
+                        className="inline-flex items-center gap-2 px-6 py-3.5 bg-[#0071E3] text-white rounded-xl text-base font-semibold hover:bg-[#0051D0] transition-all duration-200 shadow-md hover:shadow-lg"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                        </svg>
+                        Contact Host
+                      </button>
+                    )}
+                    <p className="mt-4 text-xs sm:text-sm text-[#8E8E93] font-light flex items-start gap-2">
+                      <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                       </svg>
-                      Prime Host
-                    </span>
-                    <span className="text-sm text-[#1C1C1E]/70 font-light">Host</span>
-                  </div>
-                  <div className="flex flex-wrap gap-4 sm:gap-6 mb-4 sm:mb-6 text-sm sm:text-base text-[#1C1C1E]/70 font-light">
-                    <span>Reviews: 2</span>
-                    <span>Rating: 5 stars</span>
-                    <span>Experience: 0 years</span>
-                  </div>
-                  <div className="mb-4 sm:mb-6">
-                    <h4 className="text-base sm:text-lg font-medium text-[#1C1C1E] mb-2">About {hostName}</h4>
-                    <p className="text-sm sm:text-base text-[#1C1C1E]/70 font-light leading-relaxed">
-                      {hostName} is an experienced and dedicated host committed to providing exceptional stays. They are highly rated and known for great communication and hospitality.
+                      Always communicate through the platform to protect your booking and payment
                     </p>
                   </div>
-                  <div className="flex items-center gap-2 mb-4 sm:mb-6">
-                    <div className="w-2 h-2 bg-[#34C759] rounded-full"></div>
-                    <span className="text-sm sm:text-base text-[#1C1C1E]/70 font-light">Typically responds within a few hours</span>
-                  </div>
-                  {currentUser && (
-                    <button
-                      onClick={() => {
-                        if (bookingId) {
-                          navigate(`/chat/${bookingId}`);
-                        } else {
-                          // Navigate to chat with listing info for "Contact Host" without booking
-                          navigate('/chat', { 
-                            state: { 
-                              listingId: id, 
-                              hostId: listing.hostId,
-                              hostEmail: listing.hostEmail 
-                            } 
-                          });
-                        }
-                      }}
-                      className="px-6 py-3 bg-[#0071E3] text-white rounded-xl text-sm sm:text-base font-medium hover:bg-[#0051D0] transition-colors flex items-center gap-2"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                      </svg>
-                      Contact Host
-                    </button>
-                  )}
-                  <p className="mt-3 text-xs sm:text-sm text-[#1C1C1E]/50 font-light flex items-center gap-1">
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                    </svg>
-                    Always communicate through the platform to protect your booking and payment
-                  </p>
-                </div>
                 </div>
               </section>
             </div>
@@ -1522,36 +1521,36 @@ const ListingDetails = () => {
             {/* Right Column - Availability Calendar & Booking Widget */}
             <div className="lg:sticky lg:top-24 space-y-8">
               {/* Availability Calendar */}
-              <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-sm border border-gray-100">
-              <div className="flex items-center gap-2 mb-6">
-                <svg className="w-5 h-5 text-[#1C1C1E]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                <h3 className="text-lg sm:text-xl font-light text-[#1C1C1E]">Availability</h3>
-              </div>
+              <div className="bg-white rounded-2xl sm:rounded-3xl p-6 sm:p-8 shadow-lg border border-gray-200">
+                <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-200">
+                  <svg className="w-6 h-6 text-[#0071E3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <h3 className="text-xl sm:text-2xl font-semibold text-[#1C1C1E]">Availability</h3>
+                </div>
               
-              {/* Calendar Header */}
-              <div className="flex items-center justify-between mb-4">
-                <button
-                  onClick={() => navigateMonth(-1)}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  <svg className="w-5 h-5 text-[#1C1C1E]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                  </svg>
-                </button>
-                <h4 className="text-base sm:text-lg font-medium text-[#1C1C1E]">
-                  {formatMonthYear(currentMonth)}
-                </h4>
-                <button
-                  onClick={() => navigateMonth(1)}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  <svg className="w-5 h-5 text-[#1C1C1E]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
-              </div>
+                {/* Calendar Header */}
+                <div className="flex items-center justify-between mb-6">
+                  <button
+                    onClick={() => navigateMonth(-1)}
+                    className="p-2.5 hover:bg-gray-100 rounded-xl transition-all duration-200 active:scale-95"
+                  >
+                    <svg className="w-5 h-5 text-[#1C1C1E]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+                  <h4 className="text-lg sm:text-xl font-semibold text-[#1C1C1E]">
+                    {formatMonthYear(currentMonth)}
+                  </h4>
+                  <button
+                    onClick={() => navigateMonth(1)}
+                    className="p-2.5 hover:bg-gray-100 rounded-xl transition-all duration-200 active:scale-95"
+                  >
+                    <svg className="w-5 h-5 text-[#1C1C1E]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                </div>
 
               {/* Calendar Grid */}
               <div className="mb-4">
@@ -1630,18 +1629,19 @@ const ListingDetails = () => {
               </div>
 
               {/* Booking Widget */}
-              <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-lg border border-gray-100">
-                <div className="mb-6">
-                <div className="flex items-baseline gap-2 mb-2">
-                  <span className="text-3xl sm:text-4xl font-light text-[#1C1C1E]">${listing.price}</span>
-                  <span className="text-base sm:text-lg text-[#1C1C1E]/60 font-light">
-                    {isPlace ? "/ night" : isExperience ? "/ person" : isService ? "/ service" : "/ night"}
+              <div className="bg-white rounded-2xl sm:rounded-3xl p-6 sm:p-8 shadow-xl border border-gray-200 sticky lg:top-24">
+                <div className="mb-8 pb-6 border-b border-gray-200">
+                  <div className="flex items-baseline gap-2 mb-3">
+                    <span className="text-3xl sm:text-4xl lg:text-5xl font-light text-[#1C1C1E]">${listing.price}</span>
+                    <span className="text-base sm:text-lg text-[#8E8E93] font-light">
+                      {isPlace ? "/ night" : isExperience ? "/ person" : isService ? "/ service" : "/ night"}
+                    </span>
+                  </div>
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#34C759]/10 text-[#34C759] rounded-full text-xs sm:text-sm font-semibold">
+                    <div className="w-2 h-2 bg-[#34C759] rounded-full"></div>
+                    Available
                   </span>
                 </div>
-                <span className="inline-block px-3 py-1 bg-[#34C759]/10 text-[#34C759] rounded-full text-xs sm:text-sm font-medium">
-                  Available
-                </span>
-              </div>
 
               {!bookingSuccess && !paymentSuccess ? (
                 <form onSubmit={handleBooking} className="space-y-4">
