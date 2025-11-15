@@ -3,15 +3,13 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { signOut } from "firebase/auth";
 import { auth, db } from "../firebase";
-import { collection, getDocs, query, where, orderBy, doc, addDoc, deleteDoc, onSnapshot, getDoc } from "firebase/firestore";
+import { collection, getDocs, query, where, orderBy, doc, onSnapshot, getDoc } from "firebase/firestore";
 import { HERO_VIDEO_URL, getCloudinaryVideoUrl, cloudinaryConfig } from "../config/cloudinary";
 import Header from "../components/Header";
 import HostHomePage from "./host/HostHomePage";
 
 // Listing Card Component - Apple Style
-const ListingCard = ({ listing, currentUser }) => {
-  const [isFavorite, setIsFavorite] = useState(false);
-  const [favoriteId, setFavoriteId] = useState(null);
+const ListingCard = ({ listing, currentUser, selectedCategory }) => {
   const [rating, setRating] = useState(0);
   const [reviewCount, setReviewCount] = useState(0);
 
@@ -40,78 +38,6 @@ const ListingCard = ({ listing, currentUser }) => {
 
     return () => unsubscribe();
   }, [listing.id]);
-
-  // Check if listing is favorited
-  useEffect(() => {
-    const checkFavorite = async () => {
-      if (!currentUser || !listing.id) {
-        setIsFavorite(false);
-        return;
-      }
-      try {
-        const favoritesQuery = query(
-          collection(db, "favorites"),
-          where("userId", "==", currentUser.uid),
-          where("listingId", "==", listing.id)
-        );
-        const snapshot = await getDocs(favoritesQuery);
-        if (!snapshot.empty) {
-          setIsFavorite(true);
-          setFavoriteId(snapshot.docs[0].id);
-        } else {
-          setIsFavorite(false);
-          setFavoriteId(null);
-        }
-      } catch (error) {
-        console.error("Error checking favorite:", error);
-      }
-    };
-    checkFavorite();
-  }, [currentUser, listing.id]);
-  
-  const handleFavoriteClick = async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    if (!currentUser) {
-      // Redirect to login if not authenticated
-      window.location.href = "/login";
-      return;
-    }
-
-    try {
-      if (isFavorite && favoriteId) {
-        // Remove from favorites
-        await deleteDoc(doc(db, "favorites", favoriteId));
-        setIsFavorite(false);
-        setFavoriteId(null);
-      } else {
-        // Add to favorites
-        const favoriteData = {
-          userId: currentUser.uid,
-          userEmail: currentUser.email,
-          listingId: listing.id,
-          listingTitle: listing.title,
-          listingImageUrl: listing.imageUrl,
-          createdAt: new Date().toISOString(),
-        };
-        const docRef = await addDoc(collection(db, "favorites"), favoriteData);
-        setIsFavorite(true);
-        setFavoriteId(docRef.id);
-      }
-    } catch (error) {
-      console.error("Error toggling favorite:", error);
-      console.error("Error details:", error.code, error.message);
-      // More specific error message
-      if (error.code === 'permission-denied') {
-        alert("Permission denied. Please check Firestore security rules.");
-      } else if (error.code === 'failed-precondition') {
-        alert("Please create a Firestore index for favorites collection. Check the console for the index link.");
-      } else {
-        alert(`Failed to update favorite: ${error.message || "Please try again."}`);
-      }
-    }
-  };
 
   return (
     <Link
@@ -143,36 +69,6 @@ const ListingCard = ({ listing, currentUser }) => {
         
         {/* Gradient Overlay on Hover */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/0 via-black/0 to-black/0 group-hover:from-black/0 group-hover:via-black/0 group-hover:to-black/10 transition-all duration-500"></div>
-        
-        {/* Guest Favorite Badge */}
-        <div className="absolute top-4 left-4 transform transition-transform duration-300 group-hover:scale-105">
-          <span className="px-3 py-1.5 bg-white/95 backdrop-blur-md rounded-lg text-xs font-medium text-[#1C1C1E] shadow-lg">
-            Guest favorite
-          </span>
-        </div>
-        
-        {/* Heart Icon */}
-        <button
-          onClick={handleFavoriteClick}
-          className="absolute top-4 right-4 p-2.5 bg-white/90 backdrop-blur-md rounded-full hover:bg-white transition-all duration-300 shadow-lg z-10 transform hover:scale-110"
-          aria-label="Add to favorites"
-        >
-          <svg
-            className={`w-5 h-5 transition-all duration-300 ${
-              isFavorite ? "fill-red-500 text-red-500 scale-110" : "text-[#1C1C1E]"
-            }`}
-            fill={isFavorite ? "currentColor" : "none"}
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
-            />
-          </svg>
-        </button>
       </div>
 
       {/* Content */}
@@ -207,8 +103,14 @@ const ListingCard = ({ listing, currentUser }) => {
           )}
         </div>
 
-        {/* Category Badge */}
-        {listing.category && (
+        {/* Category Badge - Show "Home" when viewing homes category, otherwise show listing category */}
+        {selectedCategory === "homes" ? (
+          <div className="mb-2 sm:mb-3">
+            <span className="inline-block px-2 sm:px-2.5 py-0.5 sm:py-1 bg-[#0071E3]/10 text-[#0071E3] rounded-md text-[10px] sm:text-xs font-medium capitalize">
+              Home
+            </span>
+          </div>
+        ) : listing.category && (
           <div className="mb-2 sm:mb-3">
             <span className="inline-block px-2 sm:px-2.5 py-0.5 sm:py-1 bg-[#0071E3]/10 text-[#0071E3] rounded-md text-[10px] sm:text-xs font-medium capitalize">
               {listing.category}
@@ -402,6 +304,11 @@ const Home = () => {
   const [checkOut, setCheckOut] = useState("");
   const [guests, setGuests] = useState(1);
   const [showGuestMenu, setShowGuestMenu] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [focusedField, setFocusedField] = useState(null);
+  const [calendarMonth, setCalendarMonth] = useState(new Date());
+  const [selectedStartDate, setSelectedStartDate] = useState(null);
+  const [selectedEndDate, setSelectedEndDate] = useState(null);
   const [recommendedListings, setRecommendedListings] = useState([]);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
 
@@ -414,6 +321,120 @@ const Home = () => {
     const year = date.getFullYear();
     return `${month}/${day}/${year}`;
   };
+
+  // Format date range for display
+  const formatDateRangeDisplay = () => {
+    if (checkIn && checkOut) {
+      return `${formatDateDisplay(checkIn)} - ${formatDateDisplay(checkOut)}`;
+    } else if (checkIn) {
+      return `${formatDateDisplay(checkIn)} - Add checkout`;
+    }
+    return 'Add dates';
+  };
+
+  // Calendar helper functions
+  const getDaysInMonth = (date) => {
+    return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  };
+
+  const getFirstDayOfMonth = (date) => {
+    return new Date(date.getFullYear(), date.getMonth(), 1).getDay();
+  };
+
+  const formatDateToString = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const isSameDate = (date1, date2) => {
+    if (!date1 || !date2) return false;
+    return date1.getFullYear() === date2.getFullYear() &&
+           date1.getMonth() === date2.getMonth() &&
+           date1.getDate() === date2.getDate();
+  };
+
+  const isDateInRange = (date, start, end) => {
+    if (!start || !end) return false;
+    const dateStr = formatDateToString(date);
+    const startStr = formatDateToString(start);
+    const endStr = formatDateToString(end);
+    return dateStr >= startStr && dateStr <= endStr;
+  };
+
+  const isDateDisabled = (date) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return date < today;
+  };
+
+  const handleDateClick = (date) => {
+    if (isDateDisabled(date)) return;
+    
+    if (!selectedStartDate || (selectedStartDate && selectedEndDate)) {
+      // Start new selection
+      setSelectedStartDate(date);
+      setSelectedEndDate(null);
+      setCheckIn(formatDateToString(date));
+      setCheckOut("");
+    } else if (selectedStartDate && !selectedEndDate) {
+      // Complete selection
+      if (date < selectedStartDate) {
+        // If clicked date is before start, make it the new start
+        setSelectedStartDate(date);
+        setSelectedEndDate(selectedStartDate);
+        setCheckIn(formatDateToString(date));
+        setCheckOut(formatDateToString(selectedStartDate));
+        // Close calendar when both dates are selected
+        setTimeout(() => {
+          setShowDatePicker(false);
+          setFocusedField(null);
+        }, 100);
+      } else {
+        // Normal case: set end date
+        setSelectedEndDate(date);
+        setCheckOut(formatDateToString(date));
+        // Close calendar when both dates are selected
+        setTimeout(() => {
+          setShowDatePicker(false);
+          setFocusedField(null);
+        }, 100);
+      }
+    }
+  };
+
+  const handleClearDates = () => {
+    setCheckIn("");
+    setCheckOut("");
+    setSelectedStartDate(null);
+    setSelectedEndDate(null);
+  };
+
+  const handlePreviousMonth = () => {
+    setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1));
+  };
+
+  const handleNextMonth = () => {
+    setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1));
+  };
+
+  // Sync calendar selection with checkIn/checkOut
+  useEffect(() => {
+    if (checkIn) {
+      const date = new Date(checkIn + 'T00:00:00');
+      setSelectedStartDate(date);
+      if (checkOut) {
+        const endDate = new Date(checkOut + 'T00:00:00');
+        setSelectedEndDate(endDate);
+      } else {
+        setSelectedEndDate(null);
+      }
+    } else {
+      setSelectedStartDate(null);
+      setSelectedEndDate(null);
+    }
+  }, [checkIn, checkOut]);
   const heroRef = useRef(null);
   const homesButtonRef = useRef(null);
   const experiencesButtonRef = useRef(null);
@@ -497,7 +518,7 @@ const Home = () => {
         // Extract preferences from bookings
         const preferences = {
           categories: {}, // place, service, experience
-          subcategories: {}, // resort, hotel, transient (for places)
+          subcategories: {}, // subcategories (for places)
           placeTypes: {}, // House, Cabin, Apartment, etc.
           serviceTypes: {}, // Photography, Catering, etc.
           activityTypes: {}, // Hiking, Food Tour, etc.
@@ -545,7 +566,7 @@ const Home = () => {
             preferences.categories[listing.category] = (preferences.categories[listing.category] || 0) + 1;
           }
 
-          // Subcategory preferences (resort, hotel, transient for places)
+          // Subcategory preferences (for places)
           if (listing.subcategory) {
             preferences.subcategories[listing.subcategory] = (preferences.subcategories[listing.subcategory] || 0) + 1;
           }
@@ -791,13 +812,13 @@ const Home = () => {
     
     // Filter by category
     if (selectedCategory === "homes") {
-      // Homes = resort, hotel, transient categories, or places with placeType
+      // Homes = places with placeType, category === "place", or legacy categories (resort, hotel, transient)
       filtered = filtered.filter(listing => 
-        listing.category === "resort" || 
-        listing.category === "hotel" || 
-        listing.category === "transient" ||
         listing.placeType ||
-        (listing.category === "place" && !listing.activityType && !listing.serviceType)
+        (listing.category === "place" && !listing.activityType && !listing.serviceType) ||
+        listing.category === "resort" ||
+        listing.category === "hotel" ||
+        listing.category === "transient"
       );
     } else if (selectedCategory === "experiences") {
       // Experiences = listings with activityType or category === "experience"
@@ -890,7 +911,7 @@ const Home = () => {
           </p>
           
           {/* CTA Buttons */}
-          <div className="hero-cta-buttons flex flex-col sm:flex-row gap-5 sm:gap-6 justify-center items-center">
+          <div className="hero-cta-buttons flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center items-center mt-6 sm:mt-8">
             <Link
               to="#listings"
               onClick={(e) => {
@@ -900,23 +921,38 @@ const Home = () => {
                   listingsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 }
               }}
-              className="hero-cta-button bg-[#0071E3] text-white rounded-2xl text-base sm:text-lg font-medium hover:bg-[#0051D0] transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 active:scale-95"
+              className="group relative px-6 sm:px-8 py-3 sm:py-3.5 bg-[#0071E3] text-white rounded-full text-sm sm:text-base font-medium hover:bg-[#0051D0] transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transform"
             >
-              Explore
+              <span className="relative z-10 flex items-center justify-center gap-1.5 sm:gap-2">
+                Explore
+                <svg className="w-4 h-4 sm:w-4.5 sm:h-4.5 transform group-hover:translate-x-1 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                </svg>
+              </span>
             </Link>
             {currentUser && userRoles && userRoles.includes("host") ? (
               <Link
                 to="/host/listings"
-                className="hero-cta-button bg-[#FF9500] text-white rounded-2xl text-base sm:text-lg font-medium hover:bg-[#FF8500] transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 active:scale-95"
+                className="group relative px-6 sm:px-8 py-3 sm:py-3.5 bg-white/10 backdrop-blur-md border border-white/30 text-white rounded-full text-sm sm:text-base font-medium hover:bg-white/20 hover:border-white/50 transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transform"
               >
-                Switch to Hosting
+                <span className="relative z-10 flex items-center justify-center gap-1.5 sm:gap-2">
+                  Switch to Hosting
+                  <svg className="w-4 h-4 sm:w-4.5 sm:h-4.5 transform group-hover:rotate-12 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                  </svg>
+                </span>
               </Link>
             ) : (
               <Link
                 to={currentUser ? "/host/onboarding" : "/login"}
-                className="hero-cta-button bg-white/10 backdrop-blur-sm border border-white/30 text-white rounded-2xl text-base sm:text-lg font-medium hover:bg-white/20 transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 active:scale-95"
+                className="group relative px-6 sm:px-8 py-3 sm:py-3.5 bg-white/10 backdrop-blur-md border border-white/30 text-white rounded-full text-sm sm:text-base font-medium hover:bg-white/20 hover:border-white/50 transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transform"
               >
-                Become A Host
+                <span className="relative z-10 flex items-center justify-center gap-1.5 sm:gap-2">
+                  Become A Host
+                  <svg className="w-4 h-4 sm:w-4.5 sm:h-4.5 transform group-hover:translate-x-1 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                </span>
               </Link>
             )}
           </div>
@@ -1017,165 +1053,331 @@ const Home = () => {
             </button>
           </div>
 
-          {/* Search & Filter Bar - Apple Style */}
+          {/* Search & Filter Bar - Modern Design */}
           <div className="flex justify-center search-bar-container mt-4 sm:mt-6" style={{ overflow: 'visible', position: 'relative' }}>
             <div className="w-full max-w-5xl px-2 sm:px-0" style={{ overflow: 'visible', position: 'relative' }}>
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center bg-white border border-gray-200 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300" style={{ overflow: 'visible' }}>
-                {/* Where - Location Search */}
-                <div className="flex-1 border-b sm:border-b-0 sm:border-r border-gray-200 min-w-0">
-                  <div className="px-4 sm:px-6 py-3 sm:py-4">
-                    <label className="block text-xs font-semibold text-[#1C1C1E] mb-1.5 uppercase tracking-wide">
-                      Where
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Search destinations"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="search-where-input w-full text-sm sm:text-base text-[#1C1C1E] placeholder:text-[#8E8E93] focus:outline-none bg-transparent font-light transition-all duration-200"
-                    />
-                  </div>
-                </div>
-
-                {/* Check-in Date */}
-                <div className="flex-1 border-b sm:border-b-0 sm:border-r border-gray-200 min-w-0">
-                  <label 
-                    htmlFor="checkin-date"
-                    className="block px-4 sm:px-6 py-3 sm:py-4 cursor-pointer hover:bg-gray-50 transition-all duration-200 group"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      document.getElementById('checkin-date')?.showPicker?.() || document.getElementById('checkin-date')?.focus();
-                    }}
-                  >
-                    <span className="block text-xs font-semibold text-[#1C1C1E] mb-1.5 uppercase tracking-wide">
-                      Check in
-                    </span>
-                    <div className="relative">
-                      <input
-                        id="checkin-date"
-                        type="date"
-                        value={checkIn}
-                        onChange={(e) => setCheckIn(e.target.value)}
-                        min={new Date().toISOString().split('T')[0]}
-                        className="absolute opacity-0 w-full h-full cursor-pointer"
-                        style={{ zIndex: 1 }}
-                      />
-                      <span className={`text-sm sm:text-base font-light transition-all duration-200 ${checkIn ? 'text-[#1C1C1E]' : 'text-[#8E8E93]'}`}>
-                        {checkIn ? formatDateDisplay(checkIn) : 'mm/dd/yyyy'}
-                      </span>
-                    </div>
-                  </label>
-                </div>
-
-                {/* Check-out Date */}
-                <div className="flex-1 border-b sm:border-b-0 sm:border-r border-gray-200 min-w-0">
-                  <label 
-                    htmlFor="checkout-date"
-                    className="block px-4 sm:px-6 py-3 sm:py-4 cursor-pointer hover:bg-gray-50 transition-all duration-200 group"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      document.getElementById('checkout-date')?.showPicker?.() || document.getElementById('checkout-date')?.focus();
-                    }}
-                  >
-                    <span className="block text-xs font-semibold text-[#1C1C1E] mb-1.5 uppercase tracking-wide">
-                      Check out
-                    </span>
-                    <div className="relative">
-                      <input
-                        id="checkout-date"
-                        type="date"
-                        value={checkOut}
-                        onChange={(e) => setCheckOut(e.target.value)}
-                        min={checkIn || new Date().toISOString().split('T')[0]}
-                        className="absolute opacity-0 w-full h-full cursor-pointer"
-                        style={{ zIndex: 1 }}
-                      />
-                      <span className={`text-sm sm:text-base font-light transition-all duration-200 ${checkOut ? 'text-[#1C1C1E]' : 'text-[#8E8E93]'}`}>
-                        {checkOut ? formatDateDisplay(checkOut) : 'mm/dd/yyyy'}
-                      </span>
-                    </div>
-                  </label>
-                </div>
-
-                {/* Guests - Dropdown */}
-                <div className="flex-1 relative min-w-0" style={{ zIndex: showGuestMenu ? 50 : 'auto' }}>
-                  <div 
-                    className="px-4 sm:px-6 py-3 sm:py-4 cursor-pointer hover:bg-gray-50 transition-all duration-200 group"
-                    onClick={() => setShowGuestMenu(!showGuestMenu)}
-                  >
-                    <span className="block text-xs font-semibold text-[#1C1C1E] mb-1.5 uppercase tracking-wide">
-                      Guests
-                    </span>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm sm:text-base text-[#1C1C1E] font-light">
-                        {guests} {guests === 1 ? 'guest' : 'guests'}
-                      </span>
+              <div 
+                className={`flex flex-col sm:flex-row items-stretch sm:items-center bg-white rounded-2xl shadow-lg transition-all duration-300 ease-out ${
+                  focusedField ? 'shadow-xl ring-2 ring-[#0071E3]/20' : 'hover:shadow-xl'
+                }`}
+                style={{ overflow: 'visible' }}
+              >
+                {/* Where - Location Search with Icon */}
+                <div 
+                  className={`flex-1 relative min-w-0 transition-all duration-300 ${
+                    focusedField === 'where' ? 'bg-gray-50/50' : ''
+                  }`}
+                  onClick={() => setFocusedField('where')}
+                >
+                  {/* Right Divider */}
+                  <div className="absolute right-0 top-0 bottom-0 w-px bg-gray-300"></div>
+                  <div className="px-4 sm:px-5 py-3 sm:py-3.5 cursor-pointer hover:bg-gray-50/50 transition-all duration-200 rounded-l-2xl sm:rounded-l-2xl">
+                    <div className="flex items-center gap-3">
                       <svg 
-                        className={`w-4 h-4 text-[#8E8E93] transition-all duration-300 ${showGuestMenu ? 'rotate-180' : ''} group-hover:text-[#1C1C1E]`}
-                        fill="none" 
-                        stroke="currentColor" 
+                        className={`w-4 h-4 flex-shrink-0 transition-all duration-300 ${
+                          focusedField === 'where' || searchQuery ? 'text-[#0071E3]' : 'text-[#8E8E93]'
+                        }`}
+                        fill="currentColor" 
                         viewBox="0 0 24 24"
                       >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+                        <circle cx="12" cy="9" r="3" fill="none" stroke="white" strokeWidth="1.5" opacity="0.9"/>
+                        <circle cx="12" cy="9" r="1.5" fill="white"/>
                       </svg>
+                      <div className="flex-1 min-w-0">
+                        <input
+                          type="text"
+                          placeholder="Where are you going?"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          onFocus={() => setFocusedField('where')}
+                          onBlur={() => setTimeout(() => setFocusedField(null), 200)}
+                          className="search-where-input w-full text-sm text-[#1C1C1E] placeholder:text-[#8E8E93] focus:outline-none bg-transparent font-light transition-all duration-200"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Available Dates - Single Calendar Input */}
+                <div 
+                  className={`flex-1 relative min-w-0 transition-all duration-300 ${
+                    focusedField === 'dates' || showDatePicker ? 'bg-gray-50/50' : ''
+                  }`}
+                  style={{ zIndex: showDatePicker ? 50 : 'auto' }}
+                >
+                  {/* Left Divider */}
+                  <div className="absolute left-0 top-0 bottom-0 w-px bg-gray-300"></div>
+                  {/* Right Divider */}
+                  <div className="absolute right-0 top-0 bottom-0 w-px bg-gray-300"></div>
+                  <div 
+                    className="px-4 sm:px-5 py-3 sm:py-3.5 cursor-pointer hover:bg-gray-50/50 transition-all duration-200"
+                    onClick={() => {
+                      if (!showDatePicker) {
+                        // Initialize calendar to show current month or selected date's month
+                        if (checkIn) {
+                          const checkInDate = new Date(checkIn + 'T00:00:00');
+                          setCalendarMonth(new Date(checkInDate.getFullYear(), checkInDate.getMonth(), 1));
+                        } else {
+                          setCalendarMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+                        }
+                      }
+                      setShowDatePicker(!showDatePicker);
+                      setFocusedField('dates');
+                    }}
+                  >
+                    <div className="relative">
+                      <label className="block text-[10px] sm:text-xs font-semibold text-[#1C1C1E]/70 mb-1 uppercase tracking-wider">
+                        AVAILABLE DATES
+                      </label>
+                      <div className="relative">
+                        <span className={`text-sm font-light transition-all duration-200 block ${
+                          checkIn || checkOut ? 'text-[#1C1C1E]' : 'text-[#8E8E93]'
+                        }`}>
+                          {formatDateRangeDisplay()}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Guest Menu Dropdown */}
-                  {showGuestMenu && (
+                  {/* Date Picker Modal - Custom Calendar */}
+                  {showDatePicker && (
                     <>
                       <div 
-                        className="fixed inset-0 bg-black/20 backdrop-blur-sm" 
-                        onClick={() => setShowGuestMenu(false)}
+                        className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40" 
+                        onClick={() => {
+                          setShowDatePicker(false);
+                          setFocusedField(null);
+                        }}
                         style={{ 
                           animation: 'fadeIn 0.2s ease-out',
-                          zIndex: 40
                         }}
                       ></div>
                       <div 
-                        className="absolute right-0 sm:right-auto left-0 sm:left-auto top-full mt-2 w-full sm:w-64 bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-visible"
-                        style={{ zIndex: 50 }}
+                        className="absolute left-0 sm:left-auto right-0 sm:right-auto top-full mt-2 w-full sm:w-auto bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-visible z-50"
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          animation: 'slideDownFadeIn 0.3s ease-out',
+                        }}
                       >
-                        <div className="p-4">
+                        <div className="p-4 sm:p-6">
+                          {/* Calendar Header */}
                           <div className="flex items-center justify-between mb-4">
-                            <span className="text-sm font-semibold text-[#1C1C1E]">Adults</span>
-                            <div className="flex items-center gap-3">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setGuests(Math.max(1, guests - 1));
-                                }}
-                                className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:border-[#0071E3] hover:bg-[#0071E3]/10 transition-all duration-200 active:scale-95"
-                              >
-                                <svg className="w-4 h-4 text-[#1C1C1E]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-                                </svg>
-                              </button>
-                              <span className="text-base font-medium text-[#1C1C1E] w-8 text-center">{guests}</span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setGuests(guests + 1);
-                                }}
-                                className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:border-[#0071E3] hover:bg-[#0071E3]/10 transition-all duration-200 active:scale-95"
-                              >
-                                <svg className="w-4 h-4 text-[#1C1C1E]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                </svg>
-                              </button>
-                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handlePreviousMonth();
+                              }}
+                              className="p-2 hover:bg-gray-100 rounded-lg transition-all duration-200"
+                            >
+                              <svg className="w-5 h-5 text-[#1C1C1E]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                              </svg>
+                            </button>
+                            <h3 className="text-base font-semibold text-[#1C1C1E]">
+                              {calendarMonth.toLocaleString('default', { month: 'long', year: 'numeric' })}
+                            </h3>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleNextMonth();
+                              }}
+                              className="p-2 hover:bg-gray-100 rounded-lg transition-all duration-200"
+                            >
+                              <svg className="w-5 h-5 text-[#1C1C1E]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                              </svg>
+                            </button>
                           </div>
+
+                          {/* Calendar Days Header */}
+                          <div className="grid grid-cols-7 gap-1 mb-2">
+                            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
+                              <div key={index} className="text-center text-xs font-semibold text-[#8E8E93] py-2">
+                                {day}
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Calendar Grid */}
+                          <div className="grid grid-cols-7 gap-1">
+                            {(() => {
+                              const daysInMonth = getDaysInMonth(calendarMonth);
+                              const firstDay = getFirstDayOfMonth(calendarMonth);
+                              const days = [];
+                              
+                              // Add empty cells for days before the first day of the month
+                              for (let i = 0; i < firstDay; i++) {
+                                days.push(null);
+                              }
+                              
+                              // Add all days of the month
+                              for (let day = 1; day <= daysInMonth; day++) {
+                                const date = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), day);
+                                days.push(date);
+                              }
+                              
+                              return days.map((date, index) => {
+                                if (!date) {
+                                  return <div key={index} className="aspect-square"></div>;
+                                }
+                                
+                                const disabled = isDateDisabled(date);
+                                const isStart = selectedStartDate && isSameDate(date, selectedStartDate);
+                                const isEnd = selectedEndDate && isSameDate(date, selectedEndDate);
+                                const inRange = selectedStartDate && selectedEndDate && isDateInRange(date, selectedStartDate, selectedEndDate);
+                                const isToday = isSameDate(date, new Date());
+                                
+                                return (
+                                  <button
+                                    key={index}
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDateClick(date);
+                                    }}
+                                    disabled={disabled}
+                                    className={`aspect-square text-sm font-light rounded-lg transition-all duration-200 ${
+                                      disabled
+                                        ? 'text-gray-300 cursor-not-allowed'
+                                        : isStart || isEnd
+                                        ? 'bg-[#0071E3] text-white font-medium'
+                                        : inRange
+                                        ? 'bg-[#0071E3]/10 text-[#0071E3]'
+                                        : isToday
+                                        ? 'bg-gray-100 text-[#1C1C1E] font-medium'
+                                        : 'text-[#1C1C1E] hover:bg-gray-100'
+                                    }`}
+                                  >
+                                    {date.getDate()}
+                                  </button>
+                                );
+                              });
+                            })()}
+                          </div>
+
+                          {/* Clear and Cancel Buttons */}
+                          <div className="mt-4 flex gap-2">
+                            {(checkIn || checkOut) && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleClearDates();
+                                }}
+                                className="flex-1 px-4 py-2.5 text-[#8E8E93] rounded-xl text-sm font-medium hover:bg-gray-100 transition-all duration-200"
+                              >
+                                Clear
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setShowDatePicker(false);
+                                setFocusedField(null);
+                              }}
+                              className={`${(checkIn || checkOut) ? 'flex-1' : 'w-full'} px-4 py-2.5 text-[#0071E3] rounded-xl text-sm font-medium hover:bg-[#0071E3]/10 transition-all duration-200`}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Guests - Dropdown */}
+                <div 
+                  className={`flex-1 relative min-w-0 transition-all duration-300 ${
+                    focusedField === 'guests' || showGuestMenu ? 'bg-gray-50/50' : ''
+                  }`}
+                  style={{ zIndex: showGuestMenu ? 50 : 'auto' }}
+                >
+                  {/* Left Divider */}
+                  <div className="absolute left-0 top-0 bottom-0 w-px bg-gray-300"></div>
+                  <div 
+                    className="px-4 sm:px-5 py-3 sm:py-3.5 cursor-pointer hover:bg-gray-50/50 transition-all duration-200 rounded-r-2xl sm:rounded-r-0"
+                    onClick={() => {
+                      setShowGuestMenu(!showGuestMenu);
+                      setFocusedField('guests');
+                    }}
+                  >
+                    <label className="block text-[10px] sm:text-xs font-semibold text-[#1C1C1E]/70 mb-1 uppercase tracking-wider">
+                      Guests
+                    </label>
+                    <div className="flex items-center justify-between">
+                      <span className={`text-sm font-light transition-all duration-200 ${
+                        guests > 1 ? 'text-[#1C1C1E]' : 'text-[#8E8E93]'
+                      }`}>
+                        {guests === 1 ? 'Add guests' : `${guests} ${guests === 1 ? 'guest' : 'guests'}`}
+                      </span>
+                      {guests > 1 && (
+                        <svg 
+                          className={`w-4 h-4 text-[#8E8E93] transition-all duration-300 ${showGuestMenu ? 'rotate-180' : ''}`}
+                          fill="none" 
+                          stroke="currentColor" 
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Guest Menu Dropdown - List of Options */}
+                  {showGuestMenu && (
+                    <>
+                      <div 
+                        className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40" 
+                        onClick={() => {
+                          setShowGuestMenu(false);
+                          setFocusedField(null);
+                        }}
+                        style={{ 
+                          animation: 'fadeIn 0.2s ease-out',
+                        }}
+                      ></div>
+                      <div 
+                        className="absolute right-0 sm:right-auto left-0 sm:left-auto top-full mt-2 w-full sm:w-64 bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-visible z-50"
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          animation: 'slideDownFadeIn 0.3s ease-out',
+                        }}
+                      >
+                        <div className="py-2">
+                          {[1, 2, 3, 4, 5, 6].map((num) => (
+                            <button
+                              key={num}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setGuests(num);
+                              }}
+                              className={`w-full px-4 sm:px-6 py-3 text-left transition-all duration-200 ${
+                                guests === num
+                                  ? 'bg-[#0071E3] text-white font-medium'
+                                  : 'text-[#1C1C1E] hover:bg-gray-50 font-light'
+                              }`}
+                            >
+                              {num === 6 ? `${num}+ guests` : `${num} ${num === 1 ? 'guest' : 'guests'}`}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="px-4 sm:px-6 pb-2">
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               setShowGuestMenu(false);
+                              setFocusedField(null);
                             }}
-                            className="w-full px-4 py-2.5 bg-[#0071E3] text-white rounded-xl text-sm font-medium hover:bg-[#0051D0] transition-colors duration-200 active:scale-95"
+                            className="w-full mt-2 px-4 py-2.5 text-[#0071E3] rounded-xl text-sm font-medium hover:bg-[#0071E3]/10 transition-all duration-200"
                           >
-                            Done
+                            Cancel
                           </button>
                         </div>
                       </div>
@@ -1183,11 +1385,11 @@ const Home = () => {
                   )}
                 </div>
 
-                {/* Search Button */}
-                <div className="p-2 sm:p-4 flex-shrink-0">
+                {/* Search Button - Circular */}
+                <div className="p-2 sm:p-3 flex-shrink-0 flex items-center justify-center">
                   <button
                     type="button"
-                    className="flex items-center justify-center w-full sm:w-12 h-12 bg-[#0071E3] text-white rounded-xl hover:bg-[#0051D0] transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105 active:scale-95"
+                    className="flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 bg-[#0071E3] text-white rounded-full hover:bg-[#0051D0] transition-all duration-300 shadow-md hover:shadow-xl hover:scale-110 active:scale-95 transform"
                     aria-label="Search"
                     onClick={() => {
                       // Trigger search/filter
@@ -1196,7 +1398,7 @@ const Home = () => {
                     }}
                   >
                     <svg
-                      className="w-5 h-5"
+                      className="w-4 h-4 sm:w-4.5 sm:h-4.5"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -1240,7 +1442,7 @@ const Home = () => {
                 <div className="flex sm:hidden gap-4 overflow-x-auto pb-4 scrollbar-hide -mx-3 sm:-mx-4 md:-mx-6 px-3 sm:px-4 md:px-6 mb-8">
                   {recommendedListings.map((listing) => (
                     <div key={listing.id} className="flex-shrink-0 w-[280px]">
-                      <ListingCard listing={listing} currentUser={currentUser} />
+                      <ListingCard listing={listing} currentUser={currentUser} selectedCategory={selectedCategory} />
                     </div>
                   ))}
                 </div>
@@ -1248,7 +1450,7 @@ const Home = () => {
                 {/* Desktop: Grid */}
                 <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
                   {recommendedListings.map((listing) => (
-                    <ListingCard key={listing.id} listing={listing} currentUser={currentUser} />
+                    <ListingCard key={listing.id} listing={listing} currentUser={currentUser} selectedCategory={selectedCategory} />
                   ))}
                 </div>
               </div>
@@ -1307,7 +1509,7 @@ const Home = () => {
                 <div className="flex sm:hidden gap-4 overflow-x-auto pb-4 scrollbar-hide -mx-3 sm:-mx-4 md:-mx-6 px-3 sm:px-4 md:px-6 mb-8">
                   {filteredListings.map((listing) => (
                     <div key={listing.id} className="flex-shrink-0 w-[280px]">
-                      <ListingCard listing={listing} currentUser={currentUser} />
+                      <ListingCard listing={listing} currentUser={currentUser} selectedCategory={selectedCategory} />
                     </div>
                   ))}
                 </div>
@@ -1315,7 +1517,7 @@ const Home = () => {
                 {/* Desktop: Grid */}
                 <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 sm:gap-8">
                   {filteredListings.map((listing) => (
-                    <ListingCard key={listing.id} listing={listing} currentUser={currentUser} />
+                    <ListingCard key={listing.id} listing={listing} currentUser={currentUser} selectedCategory={selectedCategory} />
                   ))}
                 </div>
               </div>

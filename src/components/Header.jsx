@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { signOut } from "firebase/auth";
-import { auth } from "../firebase";
+import { auth, db } from "../firebase";
+import { doc, getDoc } from "firebase/firestore";
 import WalletModal from "./WalletModal";
 import RewardsCenterModal from "./RewardsCenterModal";
 
@@ -13,6 +14,41 @@ const Header = () => {
   const [showWallet, setShowWallet] = useState(false);
   const [showRewards, setShowRewards] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState(null);
+
+  useEffect(() => {
+    const fetchProfilePhoto = async () => {
+      if (!currentUser) {
+        setProfilePhotoUrl(null);
+        return;
+      }
+
+      try {
+        // First check if currentUser has photoURL
+        if (currentUser.photoURL) {
+          setProfilePhotoUrl(currentUser.photoURL);
+        }
+
+        // Then try to fetch from Firestore (might have more recent data)
+        const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          const photoUrl = userData.photoURL || userData.profilePhotoUrl;
+          if (photoUrl) {
+            setProfilePhotoUrl(photoUrl);
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching profile photo:", error);
+        // Fallback to currentUser.photoURL if available
+        if (currentUser.photoURL) {
+          setProfilePhotoUrl(currentUser.photoURL);
+        }
+      }
+    };
+
+    fetchProfilePhoto();
+  }, [currentUser]);
 
   const handleLogout = async () => {
     try {
@@ -114,8 +150,16 @@ const Header = () => {
                       className="flex items-center gap-2 text-sm font-light text-white/90 hover:text-white transition-all duration-200 group"
                     >
                       <span>{currentUser.displayName || currentUser.email?.split('@')[0] || 'User'}</span>
-                      <div className="w-8 h-8 rounded-full bg-[#0071E3] flex items-center justify-center text-white text-xs font-medium border-2 border-white/20 group-hover:border-white/40 transition-all duration-200">
-                        {(currentUser.displayName || currentUser.email || 'U')[0].toUpperCase()}
+                      <div className="w-8 h-8 rounded-full bg-[#0071E3] flex items-center justify-center text-white text-xs font-medium border-2 border-white/20 group-hover:border-white/40 transition-all duration-200 overflow-hidden">
+                        {profilePhotoUrl ? (
+                          <img 
+                            src={profilePhotoUrl} 
+                            alt={currentUser.displayName || 'User'} 
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <span>{(currentUser.displayName || currentUser.email || 'U')[0].toUpperCase()}</span>
+                        )}
                       </div>
                       <svg 
                         className={`w-4 h-4 transition-transform duration-200 ${showUserMenu ? 'rotate-180' : ''}`}
@@ -131,7 +175,7 @@ const Header = () => {
                     {showUserMenu && (
                       <>
                         <div 
-                          className="fixed inset-0 bg-black/20 backdrop-blur-sm" 
+                          className="fixed inset-0 bg-black/20" 
                           onClick={() => setShowUserMenu(false)}
                           style={{ 
                             animation: 'fadeIn 0.2s ease-out',
@@ -139,16 +183,15 @@ const Header = () => {
                           }}
                         ></div>
                         <div 
-                          className="absolute right-0 top-full mt-2 w-64 sm:w-72 bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden user-dropdown-menu"
+                          className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden py-1 transform origin-top-right animate-slideDownFadeIn"
                           style={{ zIndex: 50 }}
                         >
                           <Link
                             to="/profile"
                             onClick={() => setShowUserMenu(false)}
-                            className="user-dropdown-item w-full text-sm text-[#1C1C1E] hover:bg-gray-50 rounded-xl transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] transform group"
-                            style={{ animation: 'fadeInUp 0.3s ease-out 0.05s both' }}
+                            className="flex items-center gap-3 px-4 py-2.5 text-sm text-[#1C1C1E] hover:bg-gray-50 transition-colors duration-200 group"
                           >
-                            <svg className="text-[#0071E3] transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                            <svg className="w-4 h-4 text-[#0071E3]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                             </svg>
                             <span className="font-light">Profile</span>
@@ -159,10 +202,9 @@ const Header = () => {
                               setShowUserMenu(false);
                               setShowRewards(true);
                             }}
-                            className="user-dropdown-item w-full text-sm text-[#1C1C1E] hover:bg-gray-50 rounded-xl transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] transform group"
-                            style={{ animation: 'fadeInUp 0.3s ease-out 0.1s both' }}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-[#1C1C1E] hover:bg-gray-50 transition-colors duration-200 group"
                           >
-                            <svg className="text-[#0071E3] transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                            <svg className="w-4 h-4 text-[#0071E3]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v13m0-13V6a2 2 0 112 2v7m-2 2H10a2 2 0 01-2-2V9a2 2 0 012-2h2m-4 5h4m-4 0v5a2 2 0 002 2h4a2 2 0 002-2v-5m-6 0h6" />
                             </svg>
                             <span className="font-light">Points & Rewards</span>
@@ -173,26 +215,24 @@ const Header = () => {
                               setShowUserMenu(false);
                               setShowWallet(true);
                             }}
-                            className="user-dropdown-item w-full text-sm text-[#1C1C1E] hover:bg-gray-50 rounded-xl transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] transform group"
-                            style={{ animation: 'fadeInUp 0.3s ease-out 0.15s both' }}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-[#1C1C1E] hover:bg-gray-50 transition-colors duration-200 group"
                           >
-                            <svg className="text-[#0071E3] transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                            <svg className="w-4 h-4 text-[#0071E3]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
                             </svg>
                             <span className="font-light">My Wallet</span>
                           </button>
 
-                          <div className="border-t border-gray-200 user-dropdown-separator"></div>
+                          <div className="border-t border-gray-200 my-1"></div>
 
                           <button
                             onClick={() => {
                               handleLogout();
                               setShowUserMenu(false);
                             }}
-                            className="user-dropdown-item w-full text-sm text-red-500 hover:bg-red-50 rounded-xl transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] transform group"
-                            style={{ animation: 'fadeInUp 0.3s ease-out 0.2s both' }}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors duration-200 group"
                           >
-                            <svg className="text-red-500 transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                            <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                             </svg>
                             <span className="font-light">Logout</span>
