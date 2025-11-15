@@ -1005,19 +1005,45 @@ const ListingDetails = () => {
       </div>
 
       {/* Category Filters */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-8 pb-4 sm:pb-6">
-        <div className="flex items-center gap-3 sm:gap-4">
-          <button className="px-4 py-2 rounded-full bg-[#F5F5F7] hover:bg-gray-200 transition-colors flex items-center gap-2 text-sm font-light text-[#1C1C1E]">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-            </svg>
-            Home
-          </button>
-          <button className="px-4 py-2 rounded-full bg-[#F5F5F7] hover:bg-gray-200 transition-colors text-sm font-light text-[#1C1C1E]">
-            Entire Home
-          </button>
+      {listing && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-8 pb-4 sm:pb-6">
+          <div className="flex items-center gap-3 sm:gap-4">
+            {/* Category Badge - Home, Experience, or Service */}
+            {(listing.placeType || listing.category === "place" || listing.category === "resort" || listing.category === "hotel" || listing.category === "transient" || (!listing.activityType && !listing.serviceType && listing.category)) && (
+              <button className="px-4 py-2 rounded-full bg-[#F5F5F7] hover:bg-gray-200 transition-colors flex items-center gap-2 text-sm font-light text-[#1C1C1E]">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                </svg>
+                {listing.activityType || listing.category === "experience" ? "Experience" : listing.serviceType || listing.category === "service" ? "Service" : "Home"}
+              </button>
+            )}
+            
+            {/* Room Type Badge - Entire Home, Private Room, or Shared Room */}
+            {listing.describePlace && (
+              <button className="px-4 py-2 rounded-full bg-[#F5F5F7] hover:bg-gray-200 transition-colors text-sm font-light text-[#1C1C1E]">
+                {listing.describePlace === "entire" ? "Entire Home" : 
+                 listing.describePlace === "private" ? "Private Room" : 
+                 listing.describePlace === "shared" ? "Shared Room" : 
+                 listing.describePlace}
+              </button>
+            )}
+            
+            {/* Experience Type Badge */}
+            {listing.activityType && (
+              <button className="px-4 py-2 rounded-full bg-[#F5F5F7] hover:bg-gray-200 transition-colors text-sm font-light text-[#1C1C1E]">
+                {listing.activityType}
+              </button>
+            )}
+            
+            {/* Service Type Badge */}
+            {listing.serviceType && (
+              <button className="px-4 py-2 rounded-full bg-[#F5F5F7] hover:bg-gray-200 transition-colors text-sm font-light text-[#1C1C1E]">
+                {listing.serviceType}
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12 sm:pb-16">

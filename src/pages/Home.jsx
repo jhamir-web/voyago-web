@@ -808,32 +808,73 @@ const Home = () => {
 
   // Filter listings based on category, search, dates, and guests
   useEffect(() => {
+    if (!listings || listings.length === 0) {
+      setFilteredListings([]);
+      return;
+    }
+
     let filtered = [...listings];
     
-    // Filter by category
+    // Filter by category - be explicit and exclusive
     if (selectedCategory === "homes") {
       // Homes = places with placeType, category === "place", or legacy categories (resort, hotel, transient)
-      filtered = filtered.filter(listing => 
-        listing.placeType ||
-        (listing.category === "place" && !listing.activityType && !listing.serviceType) ||
-        listing.category === "resort" ||
-        listing.category === "hotel" ||
-        listing.category === "transient"
-      );
+      // BUT NOT experiences or services
+      filtered = filtered.filter(listing => {
+        const hasActivityType = listing.activityType && listing.activityType.trim() !== "";
+        const hasServiceType = listing.serviceType && listing.serviceType.trim() !== "";
+        const isExperience = listing.category === "experience" || hasActivityType;
+        const isService = listing.category === "service" || hasServiceType;
+        
+        // Exclude experiences and services
+        if (isExperience || isService) {
+          return false;
+        }
+        
+        // Include if it's a home/place
+        return listing.placeType ||
+               listing.category === "place" ||
+               listing.category === "resort" ||
+               listing.category === "hotel" ||
+               listing.category === "transient";
+      });
     } else if (selectedCategory === "experiences") {
       // Experiences = listings with activityType or category === "experience"
-      filtered = filtered.filter(listing => 
-        listing.activityType || 
-        listing.category === "experience" ||
-        (listing.experiences && Array.isArray(listing.experiences) && listing.experiences.length > 0)
-      );
+      // BUT NOT services or homes (without activityType)
+      filtered = filtered.filter(listing => {
+        const hasActivityType = listing.activityType && listing.activityType.trim() !== "";
+        const hasServiceType = listing.serviceType && listing.serviceType.trim() !== "";
+        const hasPlaceTypeOnly = listing.placeType && !hasActivityType && !hasServiceType;
+        const isService = listing.category === "service" || hasServiceType;
+        
+        // Exclude services and homes without activityType
+        if (isService || (hasPlaceTypeOnly && !hasActivityType)) {
+          return false;
+        }
+        
+        // Include if it's an experience
+        return hasActivityType || 
+               listing.category === "experience" ||
+               (listing.experiences && Array.isArray(listing.experiences) && listing.experiences.length > 0);
+      });
     } else if (selectedCategory === "services") {
       // Services = listings with serviceType or category === "service"
-      filtered = filtered.filter(listing => 
-        listing.serviceType || 
-        listing.category === "service" ||
-        (listing.services && Array.isArray(listing.services) && listing.services.length > 0)
-      );
+      // BUT NOT experiences or homes (without serviceType)
+      filtered = filtered.filter(listing => {
+        const hasActivityType = listing.activityType && listing.activityType.trim() !== "";
+        const hasServiceType = listing.serviceType && listing.serviceType.trim() !== "";
+        const hasPlaceTypeOnly = listing.placeType && !hasActivityType && !hasServiceType;
+        const isExperience = listing.category === "experience" || hasActivityType;
+        
+        // Exclude experiences and homes without serviceType
+        if (isExperience || (hasPlaceTypeOnly && !hasServiceType)) {
+          return false;
+        }
+        
+        // Include if it's a service
+        return hasServiceType || 
+               listing.category === "service" ||
+               (listing.services && Array.isArray(listing.services) && listing.services.length > 0);
+      });
     }
 
     // Apply search filter
@@ -1528,7 +1569,7 @@ const Home = () => {
 
       {/* Footer - Apple Style */}
       <footer className="bg-[#1C1C1E] text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 footer-inner">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-10 sm:pt-12 md:pt-16 pb-8 sm:pb-10 footer-inner">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8 sm:gap-10 md:gap-12 lg:gap-16">
             {/* Logo and Brand */}
             <div className="flex flex-col items-center sm:items-start footer-column">
