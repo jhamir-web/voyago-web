@@ -4127,9 +4127,9 @@ const SubscriptionsContent = () => {
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
       let yPosition = 0;
-      const margin = 20;
+      const margin = 15;
       const lineHeight = 7;
-      const sectionSpacing = 12;
+      const sectionSpacing = 15;
 
       // Brand colors
       const primaryBlue = [0, 113, 227]; // #0071E3
@@ -4139,33 +4139,45 @@ const SubscriptionsContent = () => {
       const bgGray = [245, 245, 247]; // #F5F5F7
       const green = [52, 199, 89]; // #34C759
       const red = [255, 59, 48]; // #FF3B30
+      const white = [255, 255, 255];
 
       // Helper function to add header on each page
       const addHeader = () => {
+        // Header background with gradient effect
         pdf.setFillColor(...primaryBlue);
-        pdf.rect(0, 0, pageWidth, 50, "F");
+        pdf.rect(0, 0, pageWidth, 55, "F");
+        
+        // Secondary blue bar for depth
+        pdf.setFillColor(...darkBlue);
+        pdf.rect(0, 50, pageWidth, 5, "F");
         
         pdf.setTextColor(255, 255, 255);
-        pdf.setFontSize(24);
+        pdf.setFontSize(26);
         pdf.setFont("helvetica", "bold");
-        pdf.text("Voyago", margin, 20);
+        pdf.text("Voyago", margin, 28);
         
-        pdf.setFontSize(10);
+        pdf.setFontSize(11);
         pdf.setFont("helvetica", "normal");
-        pdf.setTextColor(255, 255, 255, 0.8);
-        pdf.text("Admin Report", margin, 30);
+        pdf.setTextColor(255, 255, 255, 0.9);
+        pdf.text("Subscriptions Report", margin, 40);
         
-        pdf.setDrawColor(...darkBlue);
-        pdf.setLineWidth(2);
-        pdf.line(0, 50, pageWidth, 50);
+        // Date in header (right side)
+        const dateStr = new Date().toLocaleDateString('en-US', { 
+          year: 'numeric', 
+          month: 'short', 
+          day: 'numeric'
+        });
+        pdf.setFontSize(9);
+        pdf.setTextColor(255, 255, 255, 0.8);
+        pdf.text(dateStr, pageWidth - margin, 28, { align: "right" });
         
         pdf.setTextColor(...darkGray);
-        yPosition = 65;
+        yPosition = 70;
       };
 
       // Helper function to add a new page if needed
       const checkPageBreak = (requiredSpace = 20) => {
-        if (yPosition + requiredSpace > pageHeight - margin) {
+        if (yPosition + requiredSpace > pageHeight - margin - 15) {
           pdf.addPage();
           addHeader();
           return true;
@@ -4176,185 +4188,385 @@ const SubscriptionsContent = () => {
       // Add header to first page
       addHeader();
 
-      // Report Title
-      pdf.setFontSize(22);
+      // Report Title with Subtitle
+      pdf.setFontSize(20);
       pdf.setFont("helvetica", "bold");
       pdf.setTextColor(...darkGray);
       
-      let reportTitle = "Subscriptions Report";
-      if (filter !== "all") {
-        reportTitle += ` - ${filter.charAt(0).toUpperCase() + filter.slice(1)}`;
+      let reportTitle = "Host Subscriptions Overview";
+      if (filter !== "all" || planFilter !== "all") {
+        let subtitle = "";
+        if (filter !== "all") {
+          subtitle += filter.charAt(0).toUpperCase() + filter.slice(1);
+        }
+        if (planFilter !== "all") {
+          if (subtitle) subtitle += " • ";
+          const planName = planFilter.charAt(0).toUpperCase() + planFilter.slice(1);
+          subtitle += `${planName} Plan`;
+        }
+        pdf.text(reportTitle, margin, yPosition);
+        yPosition += 8;
+        pdf.setFontSize(11);
+        pdf.setFont("helvetica", "normal");
+        pdf.setTextColor(...lightGray);
+        pdf.text(subtitle, margin, yPosition);
+      } else {
+        pdf.text(reportTitle, margin, yPosition);
       }
-      if (planFilter !== "all") {
-        const planName = planFilter.charAt(0).toUpperCase() + planFilter.slice(1);
-        reportTitle += ` - ${planName} Plan`;
-      }
       
-      pdf.text(reportTitle, margin, yPosition);
-      yPosition += 12;
+      yPosition += 15;
 
-      // Generated date
-      pdf.setFontSize(9);
-      pdf.setFont("helvetica", "normal");
-      pdf.setTextColor(...lightGray);
-      pdf.text(`Generated: ${new Date().toLocaleString('en-US', { 
-        year: 'numeric', 
-        month: 'short', 
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      })}`, margin, yPosition);
-      yPosition += sectionSpacing + 5;
-
-      // Summary Section
-      checkPageBreak(50);
-      const summaryStartY = yPosition;
-      pdf.setFillColor(...bgGray);
-      pdf.roundedRect(margin, yPosition - 5, pageWidth - (margin * 2), 45, 3, 3, "F");
+      // Summary Cards Section
+      checkPageBreak(60);
       
-      pdf.setFontSize(14);
-      pdf.setFont("helvetica", "bold");
-      pdf.setTextColor(...darkGray);
-      pdf.text("Summary", margin + 8, yPosition + 5);
-      yPosition += 12;
-
-      pdf.setFontSize(10);
-      pdf.setFont("helvetica", "normal");
-      pdf.setTextColor(...darkGray);
-      
-      pdf.text(`Total Hosts:`, margin + 10, yPosition);
-      pdf.setFont("helvetica", "bold");
-      pdf.setTextColor(...primaryBlue);
-      pdf.text(`${filteredHosts.length}`, margin + 60, yPosition);
-      yPosition += lineHeight;
-
-      pdf.setFont("helvetica", "normal");
-      pdf.setTextColor(...darkGray);
-      pdf.text(`Active Subscriptions:`, margin + 10, yPosition);
-      pdf.setFont("helvetica", "bold");
-      pdf.setTextColor(...green);
-      pdf.text(`${filteredHosts.filter(h => h.subscriptionStatus === "active").length}`, margin + 70, yPosition);
-      yPosition += lineHeight;
-
-      pdf.setFont("helvetica", "normal");
-      pdf.setTextColor(...darkGray);
-      pdf.text(`Inactive Subscriptions:`, margin + 10, yPosition);
-      pdf.setFont("helvetica", "bold");
-      pdf.setTextColor(...red);
-      pdf.text(`${filteredHosts.filter(h => h.subscriptionStatus !== "active").length}`, margin + 75, yPosition);
-      yPosition += lineHeight;
-
-      // Plan breakdown
+      const activeCount = filteredHosts.filter(h => h.subscriptionStatus === "active").length;
+      const inactiveCount = filteredHosts.filter(h => h.subscriptionStatus !== "active").length;
       const planCounts = {
         starter: filteredHosts.filter(h => h.subscriptionPlan === "starter").length,
         pro: filteredHosts.filter(h => h.subscriptionPlan === "pro").length,
         elite: filteredHosts.filter(h => h.subscriptionPlan === "elite").length
       };
-      
-      pdf.setFont("helvetica", "normal");
+
+      // Summary Title
+      pdf.setFontSize(14);
+      pdf.setFont("helvetica", "bold");
       pdf.setTextColor(...darkGray);
-      pdf.text(`Plan Breakdown:`, margin + 10, yPosition);
-      yPosition += lineHeight;
-      pdf.text(`  Starter: ${planCounts.starter}`, margin + 15, yPosition);
-      yPosition += lineHeight;
-      pdf.text(`  Pro: ${planCounts.pro}`, margin + 15, yPosition);
-      yPosition += lineHeight;
-      pdf.text(`  Elite: ${planCounts.elite}`, margin + 15, yPosition);
+      pdf.text("Summary Statistics", margin, yPosition);
+      yPosition += 10;
 
-      yPosition += sectionSpacing + 10;
+      // Summary Cards Row 1: Total, Active, Inactive
+      const cardWidth = (pageWidth - (margin * 2) - 10) / 3;
+      const cardHeight = 28;
+      const cardSpacing = 5;
+      
+      // Total Hosts Card
+      pdf.setFillColor(...bgGray);
+      pdf.roundedRect(margin, yPosition, cardWidth, cardHeight, 4, 4, "F");
+      pdf.setDrawColor(200, 200, 200);
+      pdf.setLineWidth(0.5);
+      pdf.roundedRect(margin, yPosition, cardWidth, cardHeight, 4, 4, "S");
+      
+      pdf.setFontSize(9);
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...lightGray);
+      pdf.text("Total Hosts", margin + 8, yPosition + 8);
+      pdf.setFontSize(18);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...primaryBlue);
+      pdf.text(`${filteredHosts.length}`, margin + 8, yPosition + 20);
 
-      // Hosts Table
-      checkPageBreak(30);
+      // Active Subscriptions Card
+      pdf.setFillColor(...[green[0], green[1], green[2], 0.1]);
+      pdf.roundedRect(margin + cardWidth + cardSpacing, yPosition, cardWidth, cardHeight, 4, 4, "F");
+      pdf.setDrawColor(...green);
+      pdf.setLineWidth(0.5);
+      pdf.roundedRect(margin + cardWidth + cardSpacing, yPosition, cardWidth, cardHeight, 4, 4, "S");
+      
+      pdf.setFontSize(9);
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...lightGray);
+      pdf.text("Active", margin + cardWidth + cardSpacing + 8, yPosition + 8);
+      pdf.setFontSize(18);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...green);
+      pdf.text(`${activeCount}`, margin + cardWidth + cardSpacing + 8, yPosition + 20);
+
+      // Inactive Subscriptions Card
+      pdf.setFillColor(...[red[0], red[1], red[2], 0.1]);
+      pdf.roundedRect(margin + (cardWidth + cardSpacing) * 2, yPosition, cardWidth, cardHeight, 4, 4, "F");
+      pdf.setDrawColor(...red);
+      pdf.setLineWidth(0.5);
+      pdf.roundedRect(margin + (cardWidth + cardSpacing) * 2, yPosition, cardWidth, cardHeight, 4, 4, "S");
+      
+      pdf.setFontSize(9);
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...lightGray);
+      pdf.text("Inactive", margin + (cardWidth + cardSpacing) * 2 + 8, yPosition + 8);
+      pdf.setFontSize(18);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...red);
+      pdf.text(`${inactiveCount}`, margin + (cardWidth + cardSpacing) * 2 + 8, yPosition + 20);
+
+      yPosition += cardHeight + 15;
+
+      // Plan Breakdown Section
+      checkPageBreak(45);
+      
+      pdf.setFontSize(14);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...darkGray);
+      pdf.text("Plan Distribution", margin, yPosition);
+      yPosition += 10;
+
+      // Plan breakdown cards
+      const planCardWidth = (pageWidth - (margin * 2) - 10) / 3;
+      
+      // Starter Plan Card
+      pdf.setFillColor(...bgGray);
+      pdf.roundedRect(margin, yPosition, planCardWidth, 22, 4, 4, "F");
+      pdf.setDrawColor(200, 200, 200);
+      pdf.setLineWidth(0.5);
+      pdf.roundedRect(margin, yPosition, planCardWidth, 22, 4, 4, "S");
+      
+      pdf.setFontSize(10);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...darkGray);
+      pdf.text("Starter", margin + 8, yPosition + 8);
+      pdf.setFontSize(11);
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...lightGray);
+      pdf.text("$29/month", margin + 8, yPosition + 14);
+      pdf.setFontSize(14);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...primaryBlue);
+      pdf.text(`${planCounts.starter}`, margin + 8, yPosition + 22);
+
+      // Pro Plan Card
+      pdf.setFillColor(...[primaryBlue[0], primaryBlue[1], primaryBlue[2], 0.1]);
+      pdf.roundedRect(margin + planCardWidth + cardSpacing, yPosition, planCardWidth, 22, 4, 4, "F");
+      pdf.setDrawColor(...primaryBlue);
+      pdf.setLineWidth(0.5);
+      pdf.roundedRect(margin + planCardWidth + cardSpacing, yPosition, planCardWidth, 22, 4, 4, "S");
+      
+      pdf.setFontSize(10);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...darkGray);
+      pdf.text("Pro", margin + planCardWidth + cardSpacing + 8, yPosition + 8);
+      pdf.setFontSize(11);
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...lightGray);
+      pdf.text("$79/month", margin + planCardWidth + cardSpacing + 8, yPosition + 14);
+      pdf.setFontSize(14);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...primaryBlue);
+      pdf.text(`${planCounts.pro}`, margin + planCardWidth + cardSpacing + 8, yPosition + 22);
+
+      // Elite Plan Card
+      pdf.setFillColor(...[128, 90, 213, 0.1]); // Purple tint
+      pdf.roundedRect(margin + (planCardWidth + cardSpacing) * 2, yPosition, planCardWidth, 22, 4, 4, "F");
+      pdf.setDrawColor(128, 90, 213);
+      pdf.setLineWidth(0.5);
+      pdf.roundedRect(margin + (planCardWidth + cardSpacing) * 2, yPosition, planCardWidth, 22, 4, 4, "S");
+      
+      pdf.setFontSize(10);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...darkGray);
+      pdf.text("Elite", margin + (planCardWidth + cardSpacing) * 2 + 8, yPosition + 8);
+      pdf.setFontSize(11);
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...lightGray);
+      pdf.text("$199/month", margin + (planCardWidth + cardSpacing) * 2 + 8, yPosition + 14);
+      pdf.setFontSize(14);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(128, 90, 213);
+      pdf.text(`${planCounts.elite}`, margin + (planCardWidth + cardSpacing) * 2 + 8, yPosition + 22);
+
+      yPosition += 35;
+
+      // Host Details Table Section
+      checkPageBreak(35);
       
       pdf.setFontSize(16);
       pdf.setFont("helvetica", "bold");
       pdf.setTextColor(...darkGray);
       pdf.text("Host Details", margin, yPosition);
-      yPosition += sectionSpacing;
+      yPosition += 12;
 
       if (filteredHosts.length === 0) {
-        pdf.setFontSize(10);
+        pdf.setFontSize(11);
         pdf.setFont("helvetica", "normal");
         pdf.setTextColor(...lightGray);
         pdf.text("No hosts found matching the selected filters.", margin, yPosition);
       } else {
-        // Table headers
-        checkPageBreak(30);
-        pdf.setFillColor(...primaryBlue);
-        pdf.roundedRect(margin, yPosition - 5, pageWidth - (margin * 2), 15, 2, 2, "F");
+        // Define column widths as percentages of table width
+        const tableWidth = pageWidth - (margin * 2);
+        const colWidthPercentages = {
+          host: 0.25,      // 25%
+          email: 0.30,     // 30%
+          plan: 0.12,      // 12%
+          status: 0.12,    // 12%
+          listings: 0.10,  // 10%
+          date: 0.11       // 11%
+        };
         
+        const colWidths = {
+          host: tableWidth * colWidthPercentages.host,
+          email: tableWidth * colWidthPercentages.email,
+          plan: tableWidth * colWidthPercentages.plan,
+          status: tableWidth * colWidthPercentages.status,
+          listings: tableWidth * colWidthPercentages.listings,
+          date: tableWidth * colWidthPercentages.date
+        };
+        
+        const rowHeight = 12;
+        const headerHeight = 11;
+        const cellPadding = 4;
+
+        // Table header with better styling
+        checkPageBreak(headerHeight + 5);
+        
+        // Header background with rounded top corners
+        pdf.setFillColor(...primaryBlue);
+        pdf.roundedRect(margin, yPosition, tableWidth, headerHeight, 3, 3, "F");
+        
+        // Header text with proper alignment
         pdf.setFontSize(9);
         pdf.setFont("helvetica", "bold");
         pdf.setTextColor(255, 255, 255);
         
-        pdf.text("Host", margin + 5, yPosition + 3);
-        pdf.text("Email", margin + 50, yPosition + 3);
-        pdf.text("Plan", margin + 105, yPosition + 3);
-        pdf.text("Status", margin + 130, yPosition + 3);
-        pdf.text("Listings", margin + 160, yPosition + 3);
-        pdf.text("Start Date", margin + 180, yPosition + 3);
+        let xPos = margin + cellPadding;
+        pdf.text("Host Name", xPos, yPosition + 7);
+        xPos += colWidths.host;
+        pdf.text("Email Address", xPos, yPosition + 7);
+        xPos += colWidths.email;
+        pdf.text("Plan", xPos, yPosition + 7);
+        xPos += colWidths.plan;
+        pdf.text("Status", xPos, yPosition + 7);
+        xPos += colWidths.status;
+        pdf.text("Listings", xPos, yPosition + 7);
+        xPos += colWidths.listings;
+        pdf.text("Start Date", xPos, yPosition + 7);
         
-        yPosition += 12;
+        yPosition += headerHeight + 2;
 
-        // Table rows
+        // Table rows with borders
         filteredHosts.forEach((host, index) => {
-          checkPageBreak(25);
+          checkPageBreak(rowHeight + 5);
           
           const planDetails = getPlanDetails(host.subscriptionPlan);
           const isActive = host.subscriptionStatus === "active";
           
-          // Alternate row background
+          // Row background (alternate)
           if (index % 2 === 0) {
             pdf.setFillColor(...bgGray);
-            pdf.roundedRect(margin, yPosition - 4, pageWidth - (margin * 2), 12, 1, 1, "F");
+            pdf.rect(margin, yPosition, tableWidth, rowHeight, "F");
           }
+
+          // Row borders
+          pdf.setDrawColor(220, 220, 220);
+          pdf.setLineWidth(0.3);
+          pdf.line(margin, yPosition, margin + tableWidth, yPosition);
+          pdf.line(margin, yPosition + rowHeight, margin + tableWidth, yPosition + rowHeight);
+          
+          // Vertical dividers
+          xPos = margin + colWidths.host;
+          pdf.line(xPos, yPosition, xPos, yPosition + rowHeight);
+          xPos += colWidths.email;
+          pdf.line(xPos, yPosition, xPos, yPosition + rowHeight);
+          xPos += colWidths.plan;
+          pdf.line(xPos, yPosition, xPos, yPosition + rowHeight);
+          xPos += colWidths.status;
+          pdf.line(xPos, yPosition, xPos, yPosition + rowHeight);
+          xPos += colWidths.listings;
+          pdf.line(xPos, yPosition, xPos, yPosition + rowHeight);
 
           pdf.setFontSize(8);
           pdf.setFont("helvetica", "normal");
           pdf.setTextColor(...darkGray);
 
-          // Host name (truncate if too long)
+          // Host name
+          xPos = margin + cellPadding;
           const hostName = host.displayName || host.name || "Unknown";
-          const displayName = hostName.length > 20 ? hostName.substring(0, 17) + "..." : hostName;
-          pdf.text(displayName, margin + 5, yPosition + 3);
+          const maxHostNameWidth = colWidths.host - (cellPadding * 2);
+          if (pdf.getTextWidth(hostName) > maxHostNameWidth) {
+            const truncated = hostName.substring(0, Math.floor(hostName.length * 0.75)) + "...";
+            pdf.text(truncated, xPos, yPosition + 7, { maxWidth: maxHostNameWidth });
+          } else {
+            pdf.text(hostName, xPos, yPosition + 7);
+          }
 
-          // Email (truncate if too long)
+          // Email
+          xPos += colWidths.host;
           const email = host.email || "N/A";
-          const displayEmail = email.length > 25 ? email.substring(0, 22) + "..." : email;
-          pdf.text(displayEmail, margin + 50, yPosition + 3);
+          const maxEmailWidth = colWidths.email - (cellPadding * 2);
+          if (pdf.getTextWidth(email) > maxEmailWidth) {
+            const truncated = email.substring(0, Math.floor(email.length * 0.75)) + "...";
+            pdf.text(truncated, xPos, yPosition + 7, { maxWidth: maxEmailWidth });
+          } else {
+            pdf.text(email, xPos, yPosition + 7);
+          }
 
           // Plan
-          pdf.text(planDetails.name, margin + 105, yPosition + 3);
+          xPos += colWidths.email;
+          pdf.setFont("helvetica", "bold");
+          pdf.setFontSize(8);
+          pdf.setTextColor(...darkGray);
+          pdf.text(planDetails.name, xPos, yPosition + 7);
 
-          // Status
-          pdf.setTextColor(...(isActive ? green : red));
-          pdf.text(isActive ? "Active" : "Inactive", margin + 130, yPosition + 3);
+          // Status with colored badge
+          xPos += colWidths.plan;
+          const statusText = isActive ? "Active" : "Inactive";
+          pdf.setFontSize(7);
+          const statusTextWidth = pdf.getTextWidth(statusText);
+          const statusWidth = statusTextWidth + 6;
+          const statusX = xPos + (colWidths.status - statusWidth) / 2;
+          const statusY = yPosition + 2;
+          
+          // Status badge background
+          pdf.setFillColor(...(isActive ? green : red));
+          pdf.roundedRect(statusX, statusY, statusWidth, 8, 2, 2, "F");
+          
+          // Status badge text
+          pdf.setTextColor(255, 255, 255);
+          pdf.setFont("helvetica", "bold");
+          pdf.text(statusText, statusX + 3, statusY + 6);
 
           // Listings
+          xPos += colWidths.status;
+          pdf.setFontSize(8);
+          pdf.setFont("helvetica", "normal");
           pdf.setTextColor(...darkGray);
           const listingsText = `${host.activeListingsCount} / ${host.listingLimit === 1000 ? "∞" : host.listingLimit}`;
-          pdf.text(listingsText, margin + 160, yPosition + 3);
+          pdf.text(listingsText, xPos, yPosition + 7);
 
           // Start Date
+          xPos += colWidths.listings;
           const startDateText = formatDate(host.subscriptionStartDate);
-          pdf.text(startDateText, margin + 180, yPosition + 3);
+          pdf.text(startDateText, xPos, yPosition + 7);
 
-          yPosition += 12;
+          yPosition += rowHeight;
         });
+
+        // Table bottom border
+        pdf.setDrawColor(200, 200, 200);
+        pdf.setLineWidth(0.5);
+        pdf.line(margin, yPosition, margin + tableWidth, yPosition);
+        
+        // Round bottom corners
+        pdf.setDrawColor(220, 220, 220);
+        pdf.setLineWidth(0.3);
       }
 
-      // Footer
+      // Footer with border
       const totalPages = pdf.internal.getNumberOfPages();
       for (let i = 1; i <= totalPages; i++) {
         pdf.setPage(i);
+        
+        // Footer line
+        pdf.setDrawColor(220, 220, 220);
+        pdf.setLineWidth(0.5);
+        pdf.line(margin, pageHeight - 18, pageWidth - margin, pageHeight - 18);
+        
         pdf.setFontSize(8);
         pdf.setFont("helvetica", "normal");
         pdf.setTextColor(...lightGray);
+        
+        // Footer text
+        pdf.text(
+          `Generated on ${new Date().toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric'
+          })}`,
+          margin,
+          pageHeight - 12
+        );
+        
         pdf.text(
           `Page ${i} of ${totalPages}`,
-          pageWidth / 2,
-          pageHeight - 10,
-          { align: "center" }
+          pageWidth - margin,
+          pageHeight - 12,
+          { align: "right" }
         );
       }
 
