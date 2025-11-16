@@ -2,12 +2,15 @@
 // This file automatically deploys to Vercel when you push to GitHub
 
 export default async function handler(req, res) {
-  // Handle CORS preflight requests (OPTIONS) - Don't check API key for preflight
+  // Set CORS headers for ALL requests first (including OPTIONS)
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-api-key, Authorization');
+  res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
+
+  // Handle CORS preflight requests (OPTIONS) - MUST return before any auth checks
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-api-key, Authorization');
-    res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
+    console.log('OPTIONS preflight request received - returning CORS headers');
     return res.status(200).end();
   }
 
@@ -15,11 +18,6 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
-
-  // Enable CORS for actual requests
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-api-key, Authorization');
 
   // API key check (only for POST requests, not OPTIONS)
   const apiKey = req.headers['x-api-key'] || req.headers['authorization']?.replace('Bearer ', '');
