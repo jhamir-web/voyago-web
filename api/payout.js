@@ -2,7 +2,7 @@
 // This file automatically deploys to Vercel when you push to GitHub
 
 export default async function handler(req, res) {
-  // Handle CORS preflight requests (OPTIONS)
+  // Handle CORS preflight requests (OPTIONS) - Don't check API key for preflight
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -21,13 +21,16 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-api-key, Authorization');
 
-  // Simple API key check (optional - you can remove if you want)
+  // API key check (only for POST requests, not OPTIONS)
   const apiKey = req.headers['x-api-key'] || req.headers['authorization']?.replace('Bearer ', '');
   const expectedKey = process.env.PAYOUT_API_KEY || 'voyago-secret-api-key-2024';
   
   if (!apiKey || apiKey !== expectedKey) {
+    console.error('API Key check failed. Received:', apiKey ? 'Present' : 'Missing', 'Expected:', expectedKey);
     return res.status(401).json({ error: 'Unauthorized - Invalid API key' });
   }
+  
+  console.log('API Key validated successfully');
 
   try {
     // Import PayPal SDK dynamically (Vercel supports this)
@@ -37,6 +40,15 @@ export default async function handler(req, res) {
     const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID || 'ASEGKmY1EZ2TiV4AJdCqlBsoKQVcKBYBPsloT6k7P1LdpKKrLcV3qQtXMrKySCWPnh7TxU10mW8HUh84';
     const PAYPAL_SECRET = process.env.PAYPAL_SECRET || '';
     const PAYPAL_MODE = process.env.PAYPAL_MODE || 'sandbox';
+
+    // Validate PayPal credentials
+    if (!PAYPAL_SECRET) {
+      console.error('PayPal Secret is missing! Check environment variables.');
+      return res.status(500).json({
+        error: 'PayPal Secret is not configured. Please add PAYPAL_SECRET to Vercel environment variables.',
+        details: 'The PayPal Payout API requires both Client ID and Secret to work.'
+      });
+    }
 
     // Initialize PayPal Environment
     const environment = PAYPAL_MODE === 'live'
