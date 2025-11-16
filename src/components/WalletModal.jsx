@@ -8,7 +8,6 @@ import { PAYPAL_CLIENT_ID } from "../config/paypal";
 const WalletModal = ({ isOpen, onClose }) => {
   const { currentUser, userRoles } = useAuth();
   const [balance, setBalance] = useState(0);
-  const [pendingBalance, setPendingBalance] = useState(0);
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCashInModal, setShowCashInModal] = useState(false);
@@ -36,7 +35,6 @@ const WalletModal = ({ isOpen, onClose }) => {
       if (userDoc.exists()) {
         const data = userDoc.data();
         setBalance(data.walletBalance || 0);
-        setPendingBalance(data.pendingBalance || 0);
         setTransactions(data.transactions || []);
         setPaypalEmail(data.paypalEmail || "");
       }
@@ -100,7 +98,7 @@ const WalletModal = ({ isOpen, onClose }) => {
 
   const handleWithdrawalRequest = async () => {
     if (!paypalEmail || !paypalEmail.includes("@")) {
-      alert("Please enter a valid PayPal email address.");
+      alert("Please enter your PayPal email address.");
       return;
     }
 
@@ -110,20 +108,20 @@ const WalletModal = ({ isOpen, onClose }) => {
       return;
     }
 
-    if (amount > pendingBalance) {
-      alert(`You can only withdraw up to $${pendingBalance.toFixed(2)}.`);
+    if (amount > balance) {
+      alert(`You can only withdraw up to $${balance.toFixed(2)}.`);
       return;
     }
 
     try {
       setProcessingWithdrawal(true);
 
-      // Create withdrawal request
+      // Create withdrawal request - host enters their PayPal email
       const withdrawalRequest = {
         hostId: currentUser.uid,
         hostEmail: currentUser.email,
         hostName: currentUser.displayName || currentUser.email?.split("@")[0] || "Host",
-        paypalEmail: paypalEmail,
+        paypalEmail: paypalEmail, // Host's PayPal email
         amount: amount,
         status: "pending", // pending, approved, completed, rejected
         requestedAt: serverTimestamp(),
@@ -205,15 +203,15 @@ const WalletModal = ({ isOpen, onClose }) => {
         paypalEmail: paypalEmail
       });
 
-      // Update pending balance (subtract requested amount)
+      // Update wallet balance (subtract requested amount)
       const userDoc = await getDoc(userRef);
       if (userDoc.exists()) {
         const userData = userDoc.data();
-        const currentPending = userData.pendingBalance || 0;
+        const currentBalance = userData.walletBalance || 0;
         await updateDoc(userRef, {
-          pendingBalance: currentPending - amount
+          walletBalance: currentBalance - amount
         });
-        setPendingBalance(currentPending - amount);
+        setBalance(currentBalance - amount);
       }
 
       // Add transaction record
@@ -257,11 +255,11 @@ const WalletModal = ({ isOpen, onClose }) => {
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div 
-          className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-slideDownFadeIn"
+          className="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col animate-slideDownFadeIn"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-[#0071E3]/10 flex items-center justify-center">
                 <svg className="w-5 h-5 text-[#0071E3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -281,119 +279,116 @@ const WalletModal = ({ isOpen, onClose }) => {
           </div>
 
           {/* Content */}
-          <div className="px-6 py-6 sm:px-8 sm:py-8">
+          <div className="px-6 py-5 sm:px-8 sm:py-6 flex flex-col flex-1 min-h-0">
             {/* Balance Cards */}
-            <div className="space-y-4 mb-6 sm:mb-8">
-              <div className="bg-gradient-to-r from-[#34C759] to-[#30D158] rounded-2xl p-6 sm:p-8 text-center shadow-lg">
-                <p className="text-sm sm:text-base text-white/90 font-light mb-2 sm:mb-3">Available Balance</p>
-                <p className="text-4xl sm:text-5xl font-light text-white">${balance.toFixed(2)}</p>
+            <div className="grid grid-cols-1 gap-3 mb-4 sm:mb-5 flex-shrink-0">
+              <div className="bg-gradient-to-r from-[#34C759] to-[#30D158] rounded-xl p-4 sm:p-5 text-center shadow-lg">
+                <p className="text-xs sm:text-sm text-white/90 font-light mb-1 sm:mb-2">Available Balance</p>
+                <p className="text-2xl sm:text-3xl font-light text-white">${balance.toFixed(2)}</p>
               </div>
-              {isHost && pendingBalance > 0 && (
-                <div className="bg-gradient-to-r from-[#FF9500] to-[#FFB340] rounded-2xl p-6 sm:p-8 text-center shadow-lg">
-                  <p className="text-sm sm:text-base text-white/90 font-light mb-2 sm:mb-3">Pending Balance</p>
-                  <p className="text-4xl sm:text-5xl font-light text-white">${pendingBalance.toFixed(2)}</p>
-                  <p className="text-xs sm:text-sm text-white/80 font-light mt-2">Request withdrawal to receive funds</p>
-                </div>
-              )}
             </div>
 
             {/* Action Buttons */}
-            <div className="space-y-3 mb-6 sm:mb-8">
+            <div className={`grid ${isHost && balance > 0 ? 'grid-cols-2' : 'grid-cols-1'} gap-3 mb-4 sm:mb-5 flex-shrink-0`}>
               <button
                 onClick={() => setShowCashInModal(true)}
-                className="w-full bg-[#0071E3] text-white rounded-2xl p-4 sm:p-5 font-medium hover:bg-[#0051D0] hover:shadow-lg transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-3"
+                className="w-full bg-[#0071E3] text-white rounded-xl p-3 sm:p-4 font-medium hover:bg-[#0051D0] hover:shadow-lg transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2"
               >
-                <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
-                <span className="text-base sm:text-lg">Cash In</span>
+                <span className="text-sm sm:text-base">Cash In</span>
               </button>
-              {isHost && pendingBalance > 0 && (
+              {isHost && balance > 0 && (
                 <button
                   onClick={() => setShowWithdrawalModal(true)}
-                  className="w-full bg-[#FF9500] text-white rounded-2xl p-4 sm:p-5 font-medium hover:bg-[#FF8500] hover:shadow-lg transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-3"
+                  className="w-full bg-[#FF9500] text-white rounded-xl p-3 sm:p-4 font-medium hover:bg-[#FF8500] hover:shadow-lg transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2"
                 >
-                  <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
                   </svg>
-                  <span className="text-base sm:text-lg">Request Withdrawal</span>
+                  <span className="text-sm sm:text-base">Request Withdrawal</span>
                 </button>
               )}
             </div>
 
             {/* Recent Transactions */}
-            <div>
-              <h3 className="text-lg sm:text-xl font-light text-[#1C1C1E] mb-4 sm:mb-5">Recent Transactions</h3>
+            <div className="flex flex-col flex-1 min-h-0">
+              <h3 className="text-base sm:text-lg font-light text-[#1C1C1E] mb-3 sm:mb-4 flex-shrink-0">Recent Transactions</h3>
               {loading ? (
-                <div className="text-center py-8">
+                <div className="text-center py-8 flex-shrink-0">
                   <p className="text-sm sm:text-base text-[#8E8E93] font-light">Loading...</p>
                 </div>
               ) : transactions.length > 0 ? (
-                <div className="space-y-3 sm:space-y-4">
-                  {transactions.map((transaction, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center justify-between p-4 sm:p-5 bg-gray-50 rounded-xl hover:bg-gray-100 transition-all duration-200"
-                      style={{ animation: `fadeInUp 0.3s ease-out ${0.05 * index}s both` }}
-                    >
-                      <div className="flex items-center gap-3 sm:gap-4">
+                <div className="flex flex-col flex-1 min-h-0">
+                  <div className="flex-1 min-h-0 overflow-y-auto space-y-3 sm:space-y-4 pr-2 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+                    {transactions.map((transaction, index) => (
+                      <div
+                        key={index}
+                        className="flex items-center justify-between p-3 sm:p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-all duration-200"
+                        style={{ animation: `fadeInUp 0.3s ease-out ${0.05 * index}s both` }}
+                      >
+                        <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
+                          {(() => {
+                            const isCredit = transaction.type === 'cash_in' || 
+                                           transaction.type === 'reward_claim' || 
+                                           transaction.type === 'booking_payout' || 
+                                           transaction.type === 'booking_refund' ||
+                                           transaction.type === 'booking_cancellation_refund';
+                            return (
+                              <>
+                                <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-full flex items-center justify-center flex-shrink-0 ${
+                                  isCredit ? 'bg-[#34C759]/10' : 'bg-red-100'
+                                }`}>
+                                  <svg className={`w-5 h-5 sm:w-5 sm:h-5 ${
+                                    isCredit ? 'text-[#34C759]' : 'text-red-500'
+                                  }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    {isCredit ? (
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                    ) : (
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                                    )}
+                                  </svg>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs sm:text-sm font-medium text-[#1C1C1E] capitalize truncate">
+                                    {transaction.type.replace(/_/g, ' ')}
+                                    {transaction.method && (
+                                      <span className="text-xs text-[#8E8E93] font-light ml-2">via {transaction.method}</span>
+                                    )}
+                                  </p>
+                                  <p className="text-xs text-[#8E8E93] font-light">
+                                    {new Date(transaction.date).toLocaleDateString('en-US', { 
+                                      year: 'numeric', 
+                                      month: 'short', 
+                                      day: 'numeric' 
+                                    })}
+                                  </p>
+                                </div>
+                              </>
+                            );
+                          })()}
+                        </div>
                         {(() => {
                           const isCredit = transaction.type === 'cash_in' || 
                                          transaction.type === 'reward_claim' || 
                                          transaction.type === 'booking_payout' || 
-                                         transaction.type === 'booking_refund';
+                                         transaction.type === 'booking_refund' ||
+                                         transaction.type === 'booking_cancellation_refund';
                           return (
-                            <>
-                              <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center flex-shrink-0 ${
-                                isCredit ? 'bg-[#34C759]/10' : 'bg-red-100'
-                              }`}>
-                                <svg className={`w-5 h-5 sm:w-6 sm:h-6 ${
-                                  isCredit ? 'text-[#34C759]' : 'text-red-500'
-                                }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  {isCredit ? (
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                  ) : (
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-                                  )}
-                                </svg>
-                              </div>
-                              <div>
-                                <p className="text-sm sm:text-base font-medium text-[#1C1C1E] capitalize mb-1">
-                                  {transaction.type.replace('_', ' ')}
-                                  {transaction.method && (
-                                    <span className="text-xs text-[#8E8E93] font-light ml-2">via {transaction.method}</span>
-                                  )}
-                                </p>
-                                <p className="text-xs sm:text-sm text-[#8E8E93] font-light">
-                                  {new Date(transaction.date).toLocaleDateString('en-US', { 
-                                    year: 'numeric', 
-                                    month: 'short', 
-                                    day: 'numeric' 
-                                  })}
-                                </p>
-                              </div>
-                            </>
+                            <p className={`text-sm sm:text-base font-medium flex-shrink-0 ml-3 ${
+                              isCredit ? 'text-[#34C759]' : 'text-red-500'
+                            }`}>
+                              {isCredit ? '+' : '-'}${Math.abs(transaction.amount).toFixed(2)}
+                            </p>
                           );
                         })()}
                       </div>
-                      {(() => {
-                        const isCredit = transaction.type === 'cash_in' || 
-                                       transaction.type === 'reward_claim' || 
-                                       transaction.type === 'booking_payout' || 
-                                       transaction.type === 'booking_refund';
-                        return (
-                          <p className={`text-base sm:text-lg font-medium ${
-                            isCredit ? 'text-[#34C759]' : 'text-red-500'
-                          }`}>
-                            {isCredit ? '+' : '-'}${Math.abs(transaction.amount).toFixed(2)}
-                          </p>
-                        );
-                      })()}
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               ) : (
-                <div className="bg-gray-50 rounded-xl p-8 sm:p-10 text-center">
+                <div className="bg-gray-50 rounded-xl p-8 sm:p-10 text-center flex-shrink-0">
                   <svg className="w-12 h-12 sm:w-16 sm:h-16 text-[#8E8E93] mx-auto mb-3 sm:mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
@@ -440,20 +435,23 @@ const WalletModal = ({ isOpen, onClose }) => {
                   <div className="p-6 sm:p-8">
                     <div className="mb-6">
                       <p className="text-sm text-[#8E8E93] font-light mb-4">
-                        Available pending balance: <span className="text-[#1C1C1E] font-medium">${pendingBalance.toFixed(2)}</span>
+                        Available balance: <span className="text-[#1C1C1E] font-medium">${balance.toFixed(2)}</span>
                       </p>
                       
                       <label className="block text-sm sm:text-base font-medium text-[#1C1C1E] mb-3">
-                        PayPal Email Address
+                        Your PayPal Email
                       </label>
                       <input
                         type="email"
                         value={paypalEmail}
                         onChange={(e) => setPaypalEmail(e.target.value)}
-                        placeholder="your@paypal.com"
+                        placeholder="your-email@paypal.com"
                         disabled={processingWithdrawal}
-                        className="w-full px-4 py-3 sm:py-4 text-base sm:text-lg border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FF9500] focus:border-transparent transition-all duration-200 disabled:bg-gray-100 disabled:cursor-not-allowed mb-4"
+                        className="w-full px-4 py-3 sm:py-4 text-base sm:text-lg border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FF9500] focus:border-transparent transition-all duration-200 disabled:bg-gray-100 disabled:cursor-not-allowed mb-2"
                       />
+                      <p className="text-xs text-[#8E8E93] font-light mb-4">
+                        Enter your PayPal email where you want to receive withdrawal payments.
+                      </p>
 
                       <label className="block text-sm sm:text-base font-medium text-[#1C1C1E] mb-3">
                         Withdrawal Amount (USD)
@@ -461,7 +459,7 @@ const WalletModal = ({ isOpen, onClose }) => {
                       <input
                         type="number"
                         min="1"
-                        max={pendingBalance}
+                        max={balance}
                         step="0.01"
                         value={withdrawalAmount}
                         onChange={(e) => setWithdrawalAmount(e.target.value)}
@@ -470,13 +468,13 @@ const WalletModal = ({ isOpen, onClose }) => {
                         className="w-full px-4 py-3 sm:py-4 text-base sm:text-lg border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FF9500] focus:border-transparent transition-all duration-200 disabled:bg-gray-100 disabled:cursor-not-allowed"
                       />
                       <p className="text-xs sm:text-sm text-[#8E8E93] font-light mt-2">
-                        Maximum: ${pendingBalance.toFixed(2)}
+                        Maximum: ${balance.toFixed(2)}
                       </p>
                     </div>
 
                     <button
                       onClick={handleWithdrawalRequest}
-                      disabled={processingWithdrawal || !withdrawalAmount || !paypalEmail || parseFloat(withdrawalAmount) > pendingBalance}
+                      disabled={processingWithdrawal || !withdrawalAmount || !paypalEmail || parseFloat(withdrawalAmount) > balance}
                       className="w-full bg-[#FF9500] text-white rounded-2xl p-4 sm:p-5 font-medium hover:bg-[#FF8500] hover:shadow-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
                     >
                       {processingWithdrawal ? (
@@ -552,12 +550,15 @@ const WalletModal = ({ isOpen, onClose }) => {
 
                     {cashInAmount && parseFloat(cashInAmount) >= 1 && (
                       <div className="mb-6 sm:mb-8">
-                        <p className="text-sm sm:text-base text-[#8E8E93] font-light mb-4 sm:mb-5 text-center">
+                        <p className="text-sm sm:text-base text-[#8E8E93] font-light mb-2 sm:mb-3 text-center">
                           Pay with PayPal
+                        </p>
+                        <p className="text-xs text-[#8E8E93] font-light mb-4 sm:mb-5 text-center">
+                          Payment will be sent to Business Account 1 (admin account)
                         </p>
                         <PayPalScriptProvider
                           options={{
-                            clientId: PAYPAL_CLIENT_ID,
+                            clientId: PAYPAL_CLIENT_ID, // Uses Business Account 1 (admin account) - receives all cash-in payments
                             currency: "USD",
                             intent: "capture",
                             components: "buttons",
@@ -568,6 +569,7 @@ const WalletModal = ({ isOpen, onClose }) => {
                             style={{ layout: "vertical" }}
                             createOrder={(data, actions) => {
                               // Amount is already in USD
+                              // Payment goes to Business Account 1 (admin account) via PayPal Client ID
                               return actions.order.create({
                                 purchase_units: [
                                   {
