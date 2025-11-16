@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { signOut } from "firebase/auth";
 import { auth, db } from "../firebase";
-import { collection, getDocs, query, where, orderBy, doc, onSnapshot, getDoc } from "firebase/firestore";
+import { collection, getDocs, query, where, orderBy, doc, onSnapshot, getDoc, addDoc, deleteDoc } from "firebase/firestore";
 import { HERO_VIDEO_URL, getCloudinaryVideoUrl, cloudinaryConfig } from "../config/cloudinary";
 import Header from "../components/Header";
 import HostHomePage from "./host/HostHomePage";
@@ -12,6 +12,8 @@ import HostHomePage from "./host/HostHomePage";
 const ListingCard = ({ listing, currentUser, selectedCategory }) => {
   const [rating, setRating] = useState(0);
   const [reviewCount, setReviewCount] = useState(0);
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [favoriteId, setFavoriteId] = useState(null);
 
   // Fetch real rating from reviews
   useEffect(() => {
@@ -38,6 +40,86 @@ const ListingCard = ({ listing, currentUser, selectedCategory }) => {
 
     return () => unsubscribe();
   }, [listing.id]);
+
+  // Check if listing is favorited
+  useEffect(() => {
+    const checkFavorite = async () => {
+      if (!currentUser || !listing.id) {
+        setIsFavorite(false);
+        setFavoriteId(null);
+        return;
+      }
+
+      try {
+        const favoritesQuery = query(
+          collection(db, "favorites"),
+          where("userId", "==", currentUser.uid),
+          where("listingId", "==", listing.id)
+        );
+        const snapshot = await getDocs(favoritesQuery);
+        if (!snapshot.empty) {
+          setIsFavorite(true);
+          setFavoriteId(snapshot.docs[0].id);
+        } else {
+          setIsFavorite(false);
+          setFavoriteId(null);
+        }
+      } catch (error) {
+        console.error("Error checking favorite:", error);
+      }
+    };
+    checkFavorite();
+  }, [currentUser, listing.id]);
+
+  // Handle favorite toggle
+  const handleToggleFavorite = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!currentUser) {
+      // Could show a sign-in modal here
+      return;
+    }
+
+    try {
+      if (isFavorite && favoriteId) {
+        // Remove from favorites
+        await deleteDoc(doc(db, "favorites", favoriteId));
+        setIsFavorite(false);
+        setFavoriteId(null);
+      } else {
+        // Check if already favorited (in case of race condition)
+        const existingQuery = query(
+          collection(db, "favorites"),
+          where("userId", "==", currentUser.uid),
+          where("listingId", "==", listing.id)
+        );
+        const existingSnapshot = await getDocs(existingQuery);
+        
+        if (!existingSnapshot.empty) {
+          // Already favorited, just update state
+          setIsFavorite(true);
+          setFavoriteId(existingSnapshot.docs[0].id);
+        } else {
+          // Add to favorites
+          const favoriteData = {
+            userId: currentUser.uid,
+            userEmail: currentUser.email,
+            listingId: listing.id,
+            listingTitle: listing.title,
+            listingImageUrl: listing.imageUrl,
+            createdAt: new Date().toISOString(),
+          };
+          const docRef = await addDoc(collection(db, "favorites"), favoriteData);
+          setIsFavorite(true);
+          setFavoriteId(docRef.id);
+        }
+      }
+    } catch (error) {
+      console.error("Error toggling favorite:", error);
+      alert(`Failed to update favorite: ${error.message || "Please try again."}`);
+    }
+  };
 
   return (
     <Link
@@ -69,6 +151,31 @@ const ListingCard = ({ listing, currentUser, selectedCategory }) => {
         
         {/* Gradient Overlay on Hover */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/0 via-black/0 to-black/0 group-hover:from-black/0 group-hover:via-black/0 group-hover:to-black/10 transition-all duration-500"></div>
+        
+        {/* Heart Icon - Favorite Button */}
+        {currentUser && (
+          <button
+            onClick={handleToggleFavorite}
+            className="absolute top-3 right-3 sm:top-4 sm:right-4 p-2 sm:p-2.5 bg-white/90 backdrop-blur-md rounded-full hover:bg-white transition-all duration-300 shadow-lg z-10 transform hover:scale-110 active:scale-95"
+            aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
+          >
+            <svg
+              className={`w-4 h-4 sm:w-5 sm:h-5 transition-all duration-300 ${
+                isFavorite 
+                  ? "fill-red-500 text-red-500" 
+                  : "fill-none text-gray-600 hover:text-red-500"
+              }`}
+              viewBox="0 0 24 24"
+              strokeWidth={isFavorite ? 0 : 2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+              />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Content */}
