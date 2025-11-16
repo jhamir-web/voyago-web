@@ -23,9 +23,10 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const functions = getFunctions(app);
 
-// Helper function to call PayPal Payout Server (Vercel)
-// Your deployed Vercel URL
-const PAYOUT_SERVER_URL = "https://voyago-f6zi89axw-jhamirs-projects-78cbce86.vercel.app";
+// Helper function to call PayPal Payout Server (Render)
+// Update this URL after deploying to Render
+// Your deployed Render URL (e.g., https://voyago-paypal-payout.onrender.com)
+const PAYOUT_SERVER_URL = process.env.VITE_PAYOUT_SERVER_URL || "https://voyago-paypal-payout.onrender.com";
 const PAYOUT_API_KEY = "voyago-secret-api-key-2024";
 
 export const processPayPalPayout = async (data, auth) => {

@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: voyago-paypal-payout
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: PAYOUT_API_KEY
+        sync: false
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_SECRET
+        sync: false
+      - key: PAYPAL_MODE
+        value: sandbox
+
