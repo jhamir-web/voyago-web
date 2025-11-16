@@ -253,6 +253,15 @@ button, a, img {
   }
 }
 
+@keyframes pulseSlow {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
 /* Animation Classes */
 .animate-fadeIn {
   animation: fadeIn 0.3s ease-out;
@@ -277,6 +286,10 @@ button, a, img {
 
 .animate-slideOutRight {
   animation: slideOutRight 0.3s ease-out forwards;
+}
+
+.animate-pulse-slow {
+  animation: pulseSlow 3s ease-in-out infinite;
 }
 
 /* Utility Classes */

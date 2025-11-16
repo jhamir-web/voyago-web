@@ -50,6 +50,9 @@ const ListingDetails = () => {
   const [appliedCoupon, setAppliedCoupon] = useState(null);
   const [couponError, setCouponError] = useState("");
   const [discountAmount, setDiscountAmount] = useState(0);
+  const [showPromo, setShowPromo] = useState(false);
+  const [hostPhotoUrl, setHostPhotoUrl] = useState(null);
+  const [reviewerPhotos, setReviewerPhotos] = useState({}); // userId -> photoUrl mapping
   
   // Use all uploaded images (imageUrls array if available, otherwise fall back to imageUrl)
   const listingImages = useMemo(() => {
@@ -153,9 +156,9 @@ const ListingDetails = () => {
     fetchBookedDates();
   }, [id]);
 
-  // Fetch blocked dates from host's user document
+  // Fetch blocked dates and host photo from host's user document
   useEffect(() => {
-    const fetchBlockedDates = async () => {
+    const fetchHostData = async () => {
       if (!listing?.hostId) return;
       try {
         const hostDoc = await getDoc(doc(db, "users", listing.hostId));
@@ -166,14 +169,53 @@ const ListingDetails = () => {
           } else {
             setBlockedDates([]);
           }
+          // Fetch host photo
+          if (hostData.profilePhotoUrl || hostData.photoURL) {
+            setHostPhotoUrl(hostData.profilePhotoUrl || hostData.photoURL);
+          } else {
+            setHostPhotoUrl(null);
+          }
         }
       } catch (error) {
-        console.error("Error fetching blocked dates:", error);
+        console.error("Error fetching host data:", error);
         setBlockedDates([]);
+        setHostPhotoUrl(null);
       }
     };
-    fetchBlockedDates();
+    fetchHostData();
   }, [listing?.hostId]);
+
+  // Fetch reviewer photos
+  useEffect(() => {
+    const fetchReviewerPhotos = async () => {
+      if (!reviews || reviews.length === 0) {
+        setReviewerPhotos({});
+        return;
+      }
+
+      const photoMap = {};
+      const promises = reviews.map(async (review) => {
+        if (!review.userId) return;
+        try {
+          const userDoc = await getDoc(doc(db, "users", review.userId));
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            const photoUrl = userData.profilePhotoUrl || userData.photoURL;
+            if (photoUrl) {
+              photoMap[review.userId] = photoUrl;
+            }
+          }
+        } catch (error) {
+          console.error(`Error fetching photo for user ${review.userId}:`, error);
+        }
+      });
+
+      await Promise.all(promises);
+      setReviewerPhotos(photoMap);
+    };
+
+    fetchReviewerPhotos();
+  }, [reviews]);
 
   // Fetch favorites status
   useEffect(() => {
@@ -992,94 +1034,94 @@ const ListingDetails = () => {
             {/* Favorite and Share Buttons */}
             <div className="flex items-center gap-3 flex-shrink-0">
               {/* Share Button */}
-              <div className="relative">
-                <button
-                  onClick={() => setShowShareMenu(!showShareMenu)}
+        <div className="relative">
+          <button 
+            onClick={() => setShowShareMenu(!showShareMenu)}
                   className="p-3 sm:p-3.5 bg-white rounded-full hover:bg-gray-50 transition-all duration-300 shadow-md hover:shadow-lg border border-gray-200 hover:border-gray-300"
-                  aria-label="Share listing"
-                >
+            aria-label="Share listing"
+          >
                   <svg className="w-6 h-6 sm:w-7 sm:h-7 text-[#1C1C1E] transition-transform duration-300 hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                  </svg>
-                </button>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+            </svg>
+          </button>
 
-                {/* Share Menu Dropdown */}
-                {showShareMenu && (
-                  <>
-                    {/* Backdrop to close menu */}
-                    <div 
+          {/* Share Menu Dropdown */}
+          {showShareMenu && (
+            <>
+              {/* Backdrop to close menu */}
+              <div 
                       className="fixed inset-0 z-40 bg-black/20 animate-fadeIn" 
-                      onClick={() => setShowShareMenu(false)}
-                    ></div>
-                    
-                    {/* Dropdown Menu */}
+                onClick={() => setShowShareMenu(false)}
+              ></div>
+              
+              {/* Dropdown Menu */}
                     <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden z-50 animate-slideDownFadeIn origin-top-right">
-                      <div className="p-2">
-                        <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                          Share this listing
-                        </div>
-                        
-                        {/* Copy Link */}
-                        <button
-                          onClick={handleCopyLink}
+                <div className="p-2">
+                  <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    Share this listing
+                  </div>
+                  
+                  {/* Copy Link */}
+                  <button
+                    onClick={handleCopyLink}
                           className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-[#1C1C1E] hover:bg-gray-50 rounded-xl transition-all duration-200 group"
-                        >
-                          <svg className="w-5 h-5 text-gray-600 transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                          </svg>
+                  >
+                    <svg className="w-5 h-5 text-gray-600 transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
                           <span className="font-medium">Copy link</span>
-                        </button>
+                  </button>
 
-                        {/* Facebook */}
-                        <button
-                          onClick={handleShareFacebook}
+                  {/* Facebook */}
+                  <button
+                    onClick={handleShareFacebook}
                           className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-[#1C1C1E] hover:bg-gray-50 rounded-xl transition-all duration-200 group"
-                        >
-                          <svg className="w-5 h-5 text-[#1877F2] transition-transform duration-200 group-hover:scale-110" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-                          </svg>
+                  >
+                    <svg className="w-5 h-5 text-[#1877F2] transition-transform duration-200 group-hover:scale-110" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                    </svg>
                           <span className="font-medium">Facebook</span>
-                        </button>
+                  </button>
 
-                        {/* Email */}
-                        <button
-                          onClick={handleShareEmail}
+                  {/* Email */}
+                  <button
+                    onClick={handleShareEmail}
                           className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-[#1C1C1E] hover:bg-gray-50 rounded-xl transition-all duration-200 group"
-                        >
-                          <svg className="w-5 h-5 text-gray-600 transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                          </svg>
+                  >
+                    <svg className="w-5 h-5 text-gray-600 transition-transform duration-200 group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
                           <span className="font-medium">Email</span>
-                        </button>
-                      </div>
-                    </div>
-                  </>
-                )}
+                  </button>
+                </div>
               </div>
+            </>
+          )}
+      </div>
 
-              {/* Favorite Button */}
-              <button
-                onClick={handleToggleFavorite}
+            {/* Favorite Button */}
+            <button
+              onClick={handleToggleFavorite}
                 className="p-3 sm:p-3.5 bg-white rounded-full hover:bg-gray-50 transition-all duration-300 shadow-md hover:shadow-lg border border-gray-200 hover:border-gray-300"
-                aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
-              >
-                <svg
+              aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
+            >
+              <svg
                   className={`w-6 h-6 sm:w-7 sm:h-7 transition-all duration-300 hover:scale-110 ${
                     isFavorite ? "fill-red-500 text-red-500" : "text-[#1C1C1E]"
-                  }`}
-                  fill={isFavorite ? "currentColor" : "none"}
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
-                  />
-                </svg>
-              </button>
-            </div>
+                }`}
+                fill={isFavorite ? "currentColor" : "none"}
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+                />
+              </svg>
+            </button>
+          </div>
           </div>
         </section>
 
@@ -1121,16 +1163,16 @@ const ListingDetails = () => {
                       src={img}
                       alt={`${listing.title} ${index + 1}`}
                       className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
-                    />
+                />
                   </div>
                 ))}
               </div>
             )
-          ) : (
+              ) : (
             <div className="w-full h-[400px] sm:h-[500px] lg:h-[600px] rounded-2xl sm:rounded-3xl flex items-center justify-center text-6xl bg-gradient-to-br from-gray-50 to-gray-100 shadow-lg">
-              🏠
-            </div>
-          )}
+                  🏠
+                </div>
+              )}
         </section>
 
         {/* Fullscreen Image Modal */}
@@ -1197,68 +1239,68 @@ const ListingDetails = () => {
 
         {/* Two Column Layout */}
         <section className="mt-12 sm:mt-16">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 sm:gap-12">
-            {/* Left Column - Content Sections */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 sm:gap-12">
+          {/* Left Column - Content Sections */}
             <div className="lg:col-span-2">
 
-              {/* About this place */}
-              <section className="mb-14 sm:mb-16">
-                <h2 className="text-2xl sm:text-3xl lg:text-4xl font-light text-[#1C1C1E] mb-6 sm:mb-8 pb-4 border-b border-gray-200">
+            {/* About this place */}
+              <section className="mb-12 sm:mb-14">
+                <h2 className="text-2xl sm:text-3xl lg:text-4xl font-light text-[#1C1C1E] mb-6">
                   About this place
                 </h2>
                 <div className="prose prose-lg max-w-none">
                   <p className="text-base sm:text-lg text-[#1C1C1E] font-light leading-relaxed whitespace-pre-line">
-                    {listing.description || "No description available."}
-                  </p>
-                </div>
+                {listing.description || "No description available."}
+              </p>
+            </div>
               </section>
 
               {/* What this place offers - Only show for Experiences or Services, not Homes */}
               {((listing.activityType || listing.category === "experience") || (listing.serviceType || listing.category === "service")) && (
-                <section className="mb-14 sm:mb-16 pt-10 sm:pt-12 border-t border-gray-200">
-                  <h2 className="text-2xl sm:text-3xl lg:text-4xl font-light text-[#1C1C1E] mb-8 pb-4 border-b border-gray-200">
+                <section className="mb-12 sm:mb-14">
+                  <h2 className="text-2xl sm:text-3xl lg:text-4xl font-light text-[#1C1C1E] mb-6">
                     What this place offers
                   </h2>
                   <div className="space-y-8">
-                    {/* Experiences */}
-                    {listing.experiences && listing.experiences.length > 0 && (
-                      <div>
+            {/* Experiences */}
+            {listing.experiences && listing.experiences.length > 0 && (
+                  <div>
                         <h3 className="text-lg sm:text-xl font-semibold text-[#1C1C1E] mb-5">Experiences</h3>
                         <ul className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          {listing.experiences.map((exp, index) => (
+                  {listing.experiences.map((exp, index) => (
                             <li key={index} className="flex items-start gap-3 text-[#1C1C1E] font-light">
                               <svg className="w-5 h-5 text-[#34C759] flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                              </svg>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
                               <span className="text-base">{exp}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                    {/* Services */}
-                    {listing.services && listing.services.length > 0 && (
-                      <div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {/* Services */}
+            {listing.services && listing.services.length > 0 && (
+                  <div>
                         <h3 className="text-lg sm:text-xl font-semibold text-[#1C1C1E] mb-5">Services</h3>
                         <ul className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          {listing.services.map((serv, index) => (
+                  {listing.services.map((serv, index) => (
                             <li key={index} className="flex items-start gap-3 text-[#1C1C1E] font-light">
                               <svg className="w-5 h-5 text-[#34C759] flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                              </svg>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
                               <span className="text-base">{serv}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+                )}
+              </div>
                 </section>
               )}
 
-              {/* Amenities */}
-              <section className="mb-14 sm:mb-16 pt-10 sm:pt-12 border-t border-gray-200">
-                <h2 className="text-2xl sm:text-3xl lg:text-4xl font-light text-[#1C1C1E] mb-8 pb-4 border-b border-gray-200">
+            {/* Amenities */}
+              <section className="mb-12 sm:mb-14 pt-10 sm:pt-12 border-t border-gray-200">
+                <h2 className="text-2xl sm:text-3xl lg:text-4xl font-light text-[#1C1C1E] mb-6">
                   Amenities
                 </h2>
                 {listing.amenities && listing.amenities.length > 0 ? (
@@ -1277,23 +1319,35 @@ const ListingDetails = () => {
                 )}
               </section>
 
-              {/* Google Maps */}
+            {/* Google Maps */}
               <section className="mb-14 sm:mb-16 pt-10 sm:pt-12 border-t border-gray-200">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 sm:mb-8 pb-4 border-b border-gray-200">
-                  <h2 className="text-2xl sm:text-3xl lg:text-4xl font-light text-[#1C1C1E]">Location</h2>
-                  <a
-                    href={getDirectionsUrl()}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center gap-2 px-5 sm:px-6 py-3 bg-[#0071E3] text-white rounded-xl text-sm sm:text-base font-medium hover:bg-[#0051D0] transition-all duration-200 shadow-md hover:shadow-lg"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                    </svg>
-                    Get Directions
-                  </a>
+                <h2 className="text-2xl sm:text-3xl lg:text-4xl font-light text-[#1C1C1E] mb-6">
+                  Location
+                </h2>
+                
+                {/* Address and Directions */}
+                <div className="bg-gray-50 rounded-xl p-5 sm:p-6 mb-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div className="flex items-start gap-3 flex-1">
+                      <svg className="w-5 h-5 text-[#0071E3] flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      <p className="text-base sm:text-lg text-[#1C1C1E] font-medium leading-relaxed">{listing.location}</p>
+                    </div>
+                <a
+                  href={getDirectionsUrl()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center gap-2 px-5 sm:px-6 py-3 bg-[#0071E3] text-white rounded-lg text-sm sm:text-base font-medium hover:bg-[#0051D0] transition-all duration-200 shadow-sm hover:shadow-md whitespace-nowrap"
+                >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                  </svg>
+                  Get Directions
+                </a>
+              </div>
                 </div>
-                <p className="text-base sm:text-lg text-[#1C1C1E] font-medium mb-5">{listing.location}</p>
                 <div className="w-full h-[400px] sm:h-[500px] rounded-2xl sm:rounded-3xl overflow-hidden bg-gray-100 shadow-lg border border-gray-200">
                 {GOOGLE_MAPS_API_KEY && GOOGLE_MAPS_API_KEY !== "YOUR_GOOGLE_MAPS_API_KEY_HERE" ? (
                   <LoadScript googleMapsApiKey={GOOGLE_MAPS_API_KEY}>
@@ -1336,21 +1390,21 @@ const ListingDetails = () => {
                     </div>
                   </div>
                 )}
-                </div>
+            </div>
               </section>
 
-              {/* Reviews Section */}
+            {/* Reviews Section */}
               <section className="mb-14 sm:mb-16 pt-10 sm:pt-12 border-t border-gray-200">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8 pb-4 border-b border-gray-200">
                   <h2 className="text-2xl sm:text-3xl lg:text-4xl font-light text-[#1C1C1E]">Reviews</h2>
-                  {currentUser && (
-                    <button
-                      onClick={() => setShowReviewModal(true)}
+                {currentUser && (
+                  <button
+                    onClick={() => setShowReviewModal(true)}
                       className="inline-flex items-center justify-center px-5 py-3 bg-[#0071E3] text-white rounded-xl text-sm sm:text-base font-medium hover:bg-[#0051D0] transition-all duration-200 shadow-md hover:shadow-lg"
-                    >
-                      Write a Review
-                    </button>
-                  )}
+                  >
+                    Write a Review
+                  </button>
+                )}
                 </div>
               
               {reviews.length > 0 ? (
@@ -1384,14 +1438,29 @@ const ListingDetails = () => {
                     {reviews.map((review) => (
                       <div key={review.id} className="border-b border-gray-200 pb-8 sm:pb-10 last:border-0">
                         <div className="flex items-start gap-4">
-                          <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-[#0071E3] flex items-center justify-center text-white text-base sm:text-lg font-semibold flex-shrink-0 shadow-md">
-                            {(review.userName || review.userEmail?.split('@')[0] || "A")[0].toUpperCase()}
-                          </div>
+                          {reviewerPhotos[review.userId] ? (
+                            <img 
+                              src={reviewerPhotos[review.userId]} 
+                              alt={review.userName || review.userEmail?.split('@')[0] || "Anonymous"}
+                              className="w-12 h-12 sm:w-14 sm:h-14 rounded-full object-cover flex-shrink-0 shadow-md"
+                              onError={(e) => {
+                                e.target.style.display = 'none';
+                                const fallback = e.target.nextElementSibling;
+                                if (fallback) fallback.style.display = 'flex';
+                              }}
+                            />
+                          ) : null}
+                          <div 
+                            className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-[#0071E3] flex items-center justify-center text-white text-base sm:text-lg font-semibold flex-shrink-0 shadow-md"
+                            style={{ display: reviewerPhotos[review.userId] ? 'none' : 'flex' }}
+                          >
+                                {(review.userName || review.userEmail?.split('@')[0] || "A")[0].toUpperCase()}
+                              </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
                               <h4 className="font-semibold text-base sm:text-lg text-[#1C1C1E]">
-                                {review.userName || review.userEmail?.split('@')[0] || "Anonymous"}
-                              </h4>
+                                  {review.userName || review.userEmail?.split('@')[0] || "Anonymous"}
+                                </h4>
                               <span className="text-xs sm:text-sm text-[#8E8E93] font-light">
                                 {new Date(review.createdAt).toLocaleDateString('en-US', {
                                   month: 'long',
@@ -1400,21 +1469,21 @@ const ListingDetails = () => {
                               </span>
                             </div>
                             <div className="flex items-center gap-2 mb-3">
-                              {[...Array(5)].map((_, i) => (
-                                <svg
-                                  key={i}
+                                    {[...Array(5)].map((_, i) => (
+                                      <svg
+                                        key={i}
                                   className={`w-5 h-5 ${
-                                    i < review.rating
-                                      ? "text-yellow-400 fill-yellow-400"
-                                      : "text-gray-300"
-                                  }`}
-                                  fill="currentColor"
-                                  viewBox="0 0 20 20"
-                                >
-                                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                                </svg>
-                              ))}
-                            </div>
+                                          i < review.rating
+                                            ? "text-yellow-400 fill-yellow-400"
+                                            : "text-gray-300"
+                                        }`}
+                                        fill="currentColor"
+                                        viewBox="0 0 20 20"
+                                      >
+                                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                                      </svg>
+                                    ))}
+                                  </div>
                             <p className="text-base sm:text-lg text-[#1C1C1E] font-light leading-relaxed">
                               {review.comment}
                             </p>
@@ -1449,115 +1518,179 @@ const ListingDetails = () => {
               )}
               </section>
 
-              {/* Host Section */}
+            {/* Host Section */}
               <section className="mb-14 sm:mb-16 pt-10 sm:pt-12 border-t border-gray-200">
                 <h2 className="text-2xl sm:text-3xl lg:text-4xl font-light text-[#1C1C1E] mb-8 pb-4 border-b border-gray-200">Meet your host</h2>
-                <div className="flex flex-col sm:flex-row gap-6 sm:gap-8">
-                  <div className="flex-shrink-0">
-                    <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-[#0071E3] flex items-center justify-center text-white text-2xl sm:text-3xl font-semibold shadow-lg">
-                      {hostInitials}
-                    </div>
+              <div className="flex flex-col sm:flex-row gap-6 sm:gap-8">
+                <div className="flex-shrink-0">
+                    {hostPhotoUrl ? (
+                      <img 
+                        src={hostPhotoUrl} 
+                        alt={hostName}
+                        className="w-20 h-20 sm:w-24 sm:h-24 rounded-full object-cover shadow-lg"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          const fallback = e.target.nextElementSibling;
+                          if (fallback) fallback.style.display = 'flex';
+                        }}
+                      />
+                    ) : null}
+                    <div 
+                      className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-[#0071E3] flex items-center justify-center text-white text-2xl sm:text-3xl font-semibold shadow-lg"
+                      style={{ display: hostPhotoUrl ? 'none' : 'flex' }}
+                    >
+                    {hostInitials}
                   </div>
-                  <div className="flex-1">
+                </div>
+                <div className="flex-1">
                     <div className="flex flex-wrap items-center gap-3 mb-4">
                       <h3 className="text-xl sm:text-2xl lg:text-3xl font-semibold text-[#1C1C1E]">{hostName}</h3>
                       <span className="px-3 py-1.5 bg-yellow-100 text-yellow-800 rounded-full text-xs sm:text-sm font-semibold flex items-center gap-1.5">
                         <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                        </svg>
-                        Prime Host
-                      </span>
-                    </div>
+                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                      </svg>
+                      Prime Host
+                    </span>
+                  </div>
                     <div className="flex flex-wrap gap-5 sm:gap-6 mb-6 text-sm sm:text-base text-[#8E8E93] font-light">
                       <span className="text-[#1C1C1E] font-medium">Reviews: 2</span>
                       <span className="text-[#1C1C1E] font-medium">Rating: 5 stars</span>
                       <span className="text-[#1C1C1E] font-medium">Experience: 0 years</span>
-                    </div>
+                  </div>
                     <div className="mb-6">
                       <h4 className="text-lg sm:text-xl font-semibold text-[#1C1C1E] mb-3">About {hostName}</h4>
                       <p className="text-base sm:text-lg text-[#1C1C1E] font-light leading-relaxed">
-                        {hostName} is an experienced and dedicated host committed to providing exceptional stays. They are highly rated and known for great communication and hospitality.
-                      </p>
-                    </div>
+                      {hostName} is an experienced and dedicated host committed to providing exceptional stays. They are highly rated and known for great communication and hospitality.
+                    </p>
+                  </div>
                     <div className="flex items-center gap-2 mb-6">
                       <div className="w-2.5 h-2.5 bg-[#34C759] rounded-full animate-pulse"></div>
                       <span className="text-base sm:text-lg text-[#1C1C1E] font-light">Typically responds within a few hours</span>
-                    </div>
-                    {currentUser && (
-                      <button
-                        onClick={() => {
-                          if (bookingId) {
-                            navigate(`/chat/${bookingId}`);
-                          } else {
-                            // Navigate to chat with listing info for "Contact Host" without booking
-                            navigate('/chat', { 
-                              state: { 
-                                listingId: id, 
-                                hostId: listing.hostId,
-                                hostEmail: listing.hostEmail 
-                              } 
-                            });
-                          }
-                        }}
+                  </div>
+                  {currentUser && (
+                    <button
+                      onClick={() => {
+                        if (bookingId) {
+                          navigate(`/chat/${bookingId}`);
+                        } else {
+                          // Navigate to chat with listing info for "Contact Host" without booking
+                          navigate('/chat', { 
+                            state: { 
+                              listingId: id, 
+                              hostId: listing.hostId,
+                              hostEmail: listing.hostEmail 
+                            } 
+                          });
+                        }
+                      }}
                         className="inline-flex items-center gap-2 px-6 py-3.5 bg-[#0071E3] text-white rounded-xl text-base font-semibold hover:bg-[#0051D0] transition-all duration-200 shadow-md hover:shadow-lg"
-                      >
+                    >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                        </svg>
-                        Contact Host
-                      </button>
-                    )}
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                      </svg>
+                      Contact Host
+                    </button>
+                  )}
                     <p className="mt-4 text-xs sm:text-sm text-[#8E8E93] font-light flex items-start gap-2">
                       <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                      </svg>
-                      Always communicate through the platform to protect your booking and payment
-                    </p>
-                  </div>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                    Always communicate through the platform to protect your booking and payment
+                  </p>
                 </div>
+              </div>
               </section>
             </div>
 
-            {/* Right Column - Availability Calendar & Booking Widget */}
-            <div className="lg:sticky lg:top-24 space-y-8">
-              {/* Availability Calendar */}
-              <div className="bg-white rounded-2xl sm:rounded-3xl p-6 sm:p-8 shadow-lg border border-gray-200">
-                <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-200">
-                  <svg className="w-6 h-6 text-[#0071E3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  <h3 className="text-xl sm:text-2xl font-semibold text-[#1C1C1E]">Availability</h3>
-                </div>
+            {/* Right Column - Booking Widget */}
+            <div className="lg:sticky lg:top-24">
+              {/* Booking Card */}
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+                {/* Price Header */}
+                <div className="bg-gradient-to-br from-[#0071E3] to-[#0051D0] p-5 text-white">
+                  <div className="flex items-baseline gap-2 mb-2">
+                    <span className="text-4xl font-light">${listing.price}</span>
+                    <span className="text-sm font-light opacity-90">
+                      {isPlace ? "/ night" : isExperience ? "/ person" : isService ? "/ service" : "/ night"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-white rounded-full"></div>
+                    <span className="text-sm font-medium">Available now</span>
+            </div>
+          </div>
+
+                {/* Booking Form */}
+                {!bookingSuccess && !paymentSuccess ? (
+                  <form onSubmit={handleBooking} className="p-5 space-y-4">
+                    {/* Date Fields */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                          Check-in
+                        </label>
+                        <input
+                          type="date"
+                          value={checkIn}
+                          onChange={(e) => setCheckIn(e.target.value)}
+                          min={new Date().toISOString().split("T")[0]}
+                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:border-[#0071E3] focus:ring-2 focus:ring-[#0071E3]/20 bg-white text-sm text-gray-900 transition-all"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                          Check-out
+                        </label>
+                        <input
+                          type="date"
+                          value={checkOut}
+                          onChange={(e) => setCheckOut(e.target.value)}
+                          min={checkIn || new Date().toISOString().split("T")[0]}
+                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:border-[#0071E3] focus:ring-2 focus:ring-[#0071E3]/20 bg-white text-sm text-gray-900 transition-all"
+                        />
+                      </div>
+                    </div>
+
+            {/* Availability Calendar */}
+                    <div className="pt-3 border-t border-gray-100">
+                      <div className="flex items-center gap-2 mb-3">
+                        <svg className="w-4 h-4 text-[#0071E3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                        <h3 className="text-sm font-semibold text-gray-900">Availability</h3>
+              </div>
               
-                {/* Calendar Header */}
-                <div className="flex items-center justify-between mb-6">
-                  <button
-                    onClick={() => navigateMonth(-1)}
-                    className="p-2.5 hover:bg-gray-100 rounded-xl transition-all duration-200 active:scale-95"
-                  >
-                    <svg className="w-5 h-5 text-[#1C1C1E]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                    </svg>
-                  </button>
-                  <h4 className="text-lg sm:text-xl font-semibold text-[#1C1C1E]">
-                    {formatMonthYear(currentMonth)}
-                  </h4>
-                  <button
-                    onClick={() => navigateMonth(1)}
-                    className="p-2.5 hover:bg-gray-100 rounded-xl transition-all duration-200 active:scale-95"
-                  >
-                    <svg className="w-5 h-5 text-[#1C1C1E]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  </button>
-                </div>
+              {/* Calendar Header */}
+                      <div className="flex items-center justify-between mb-3">
+                <button
+                          type="button"
+                  onClick={() => navigateMonth(-1)}
+                          className="p-1.5 hover:bg-gray-100 rounded-lg transition-all duration-200"
+                >
+                          <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                        <h4 className="text-sm font-semibold text-gray-900">
+                  {formatMonthYear(currentMonth)}
+                </h4>
+                <button
+                          type="button"
+                  onClick={() => navigateMonth(1)}
+                          className="p-1.5 hover:bg-gray-100 rounded-lg transition-all duration-200"
+                >
+                          <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
 
               {/* Calendar Grid */}
-              <div className="mb-4">
+                      <div className="mb-3">
                 {/* Day Headers */}
-                <div className="grid grid-cols-7 gap-1 mb-2">
-                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-                    <div key={day} className="text-center text-xs sm:text-sm text-[#1C1C1E]/60 font-light py-2">
+                        <div className="grid grid-cols-7 gap-1 mb-1">
+                          {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((day) => (
+                            <div key={day} className="text-center text-xs text-gray-500 font-medium py-1">
                       {day}
                     </div>
                   ))}
@@ -1572,6 +1705,7 @@ const ListingDetails = () => {
                     return (
                       <button
                         key={index}
+                                type="button"
                         disabled={!date || status === 'past' || status === 'booked' || status === 'blocked'}
                         onClick={() => {
                           if (!date || status === 'past' || status === 'booked' || status === 'blocked') return;
@@ -1583,23 +1717,27 @@ const ListingDetails = () => {
                           }
                         }}
                         className={`
-                          aspect-square rounded-lg text-xs sm:text-sm font-light transition-all
+                                  aspect-square rounded-lg text-xs font-medium transition-all
                           ${!date ? 'cursor-default' : ''}
                           ${status === 'past' ? 'text-gray-300 bg-gray-50 cursor-not-allowed' : ''}
-                          ${status === 'booked' ? 'text-[#1C1C1E] bg-gray-200 cursor-not-allowed relative' : ''}
-                          ${status === 'blocked' ? 'text-white bg-red-100 cursor-not-allowed relative' : ''}
-                          ${status === 'available' ? 'text-[#1C1C1E] bg-green-50 hover:bg-green-100 cursor-pointer' : ''}
-                          ${isSelected ? 'bg-[#0071E3] text-white ring-2 ring-[#0071E3] ring-offset-2' : ''}
-                          ${status === 'checkin' || status === 'checkout' ? 'bg-[#0071E3] text-white font-medium' : ''}
+                                  ${status === 'booked' ? 'text-gray-500 bg-gray-100 cursor-not-allowed relative' : ''}
+                                  ${status === 'blocked' ? 'text-white bg-red-200 cursor-not-allowed relative' : ''}
+                                  ${status === 'available' ? 'text-gray-700 bg-green-50 hover:bg-green-100 hover:text-gray-900 cursor-pointer' : ''}
+                                  ${isSelected ? 'bg-[#0071E3] text-white font-semibold' : ''}
+                                  ${status === 'checkin' || status === 'checkout' ? 'bg-[#0071E3] text-white font-semibold' : ''}
                         `}
                         title={date ? date.toLocaleDateString() : ''}
                       >
                         {date ? date.getDate() : ''}
                         {status === 'booked' && (
-                          <span className="absolute inset-0 flex items-center justify-center text-[#1C1C1E] text-xs font-medium">✓</span>
+                                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden">
+                                    <div className="w-[141%] h-0.5 bg-gray-600 transform rotate-45 origin-center"></div>
+                                  </div>
                         )}
                         {status === 'blocked' && (
-                          <span className="absolute inset-0 flex items-center justify-center text-white text-xs">✕</span>
+                                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden">
+                                    <div className="w-[141%] h-0.5 bg-red-600 transform rotate-45 origin-center"></div>
+                                  </div>
                         )}
                       </button>
                     );
@@ -1608,98 +1746,37 @@ const ListingDetails = () => {
               </div>
 
               {/* Legend */}
-              <div className="flex flex-wrap gap-4 text-xs sm:text-sm text-[#1C1C1E]/70 font-light pt-4 border-t border-gray-200">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded bg-green-50"></div>
+                      <div className="flex flex-wrap gap-3 text-xs text-gray-600 pt-3 border-t border-gray-100">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-2.5 h-2.5 rounded bg-green-50 border border-green-200"></div>
                   <span>Available</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded bg-red-100"></div>
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-2.5 h-2.5 rounded bg-red-200"></div>
                   <span>Blocked</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded bg-gray-200"></div>
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-2.5 h-2.5 rounded bg-gray-100"></div>
                   <span>Booked</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded bg-white border border-gray-300"></div>
-                  <span>Past</span>
-                </div>
               </div>
-              </div>
+            </div>
 
-              {/* Booking Widget */}
-              <div className="bg-white rounded-2xl sm:rounded-3xl p-6 sm:p-8 shadow-xl border border-gray-200 sticky lg:top-24">
-                <div className="mb-8 pb-6 border-b border-gray-200">
-                  <div className="flex items-baseline gap-2 mb-3">
-                    <span className="text-3xl sm:text-4xl lg:text-5xl font-light text-[#1C1C1E]">${listing.price}</span>
-                    <span className="text-base sm:text-lg text-[#8E8E93] font-light">
-                      {isPlace ? "/ night" : isExperience ? "/ person" : isService ? "/ service" : "/ night"}
-                    </span>
-                  </div>
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#34C759]/10 text-[#34C759] rounded-full text-xs sm:text-sm font-semibold">
-                    <div className="w-2 h-2 bg-[#34C759] rounded-full"></div>
-                    Available
-                  </span>
-                </div>
-
-              {!bookingSuccess && !paymentSuccess ? (
-                <form onSubmit={handleBooking} className="space-y-4">
-                  {/* Check-in/Check-out Fields */}
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-xs sm:text-sm font-medium text-[#1C1C1E] mb-2 uppercase tracking-wider">
-                        CHECK-IN
-                      </label>
-                      <input
-                        type="date"
-                        value={checkIn}
-                        onChange={(e) => setCheckIn(e.target.value)}
-                        min={new Date().toISOString().split("T")[0]}
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-[#0071E3] focus:ring-2 focus:ring-[#0071E3]/10 bg-[#F5F5F7] text-[#1C1C1E] font-light transition-all"
-                        placeholder="Select date"
-                      />
-                      {!checkIn && (
-                        <p className="text-xs text-[#1C1C1E]/50 font-light mt-1">Select date</p>
-                      )}
-                    </div>
-                    <div>
-                      <label className="block text-xs sm:text-sm font-medium text-[#1C1C1E] mb-2 uppercase tracking-wider">
-                        CHECK-OUT
-                      </label>
-                      <input
-                        type="date"
-                        value={checkOut}
-                        onChange={(e) => setCheckOut(e.target.value)}
-                        min={checkIn || new Date().toISOString().split("T")[0]}
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-[#0071E3] focus:ring-2 focus:ring-[#0071E3]/10 bg-[#F5F5F7] text-[#1C1C1E] font-light transition-all"
-                        placeholder="Select date"
-                      />
-                      {!checkOut && (
-                        <p className="text-xs text-[#1C1C1E]/50 font-light mt-1">Select date</p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 text-sm text-[#1C1C1E]/60 font-light py-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    {/* Promo Code - Collapsible */}
+                    {listing.promoCode && !appliedCoupon && (
+                      <div className="pt-2 border-t border-gray-100">
+                        <button
+                          type="button"
+                          onClick={() => setShowPromo(!showPromo)}
+                          className="w-full flex items-center justify-between text-sm text-[#0071E3] hover:text-[#0051D0] transition-colors"
+                        >
+                          <span className="font-medium">Have a promo code?</span>
+                          <svg className={`w-4 h-4 transition-transform ${showPromo ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
-                    <span>Click to select dates</span>
-                  </div>
-
-                  {/* Promo/Coupon Code Section */}
-                  <div className="border-t border-gray-200 pt-4">
-                    <label className="block text-xs sm:text-sm font-medium text-[#1C1C1E] mb-2">
-                      Promo/Coupon Code (Optional)
-                    </label>
-                    {listing.promoCode && (
-                      <p className="text-xs text-[#8E8E93] font-light mb-2">
-                        This listing has a promo code available
-                      </p>
-                    )}
-                    {!appliedCoupon ? (
-                      <div className="flex gap-2">
+                        </button>
+                        {showPromo && (
+                          <div className="mt-3 space-y-2">
                         <input
                           type="text"
                           value={couponCode}
@@ -1707,29 +1784,33 @@ const ListingDetails = () => {
                             setCouponCode(e.target.value.toUpperCase());
                             setCouponError("");
                           }}
-                          placeholder={listing.promoCode ? `Enter code (e.g., ${listing.promoCode})` : "Enter promo or coupon code"}
-                          className="flex-1 px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-[#0071E3] focus:ring-2 focus:ring-[#0071E3]/10 bg-white text-[#1C1C1E] font-light"
+                              placeholder={`Enter code (e.g., ${listing.promoCode})`}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-[#0071E3] focus:ring-2 focus:ring-[#0071E3]/20 bg-white text-sm"
                         />
                         <button
                           type="button"
                           onClick={handleApplyCoupon}
                           disabled={!couponCode.trim() || !checkIn || !checkOut}
-                          className="px-4 py-2.5 bg-[#FF9500] text-white rounded-xl font-medium hover:bg-[#E6850E] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="w-full px-3 py-2 bg-[#0071E3] text-white rounded-lg text-sm font-medium hover:bg-[#0051D0] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          Apply
+                              Apply Code
                         </button>
                       </div>
-                    ) : (
-                      <div className="flex items-center justify-between p-3 bg-green-50 border-2 border-green-200 rounded-xl">
+                        )}
+                      </div>
+                    )}
+
+                    {/* Applied Coupon */}
+                    {appliedCoupon && (
+                      <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg">
                         <div className="flex items-center gap-2">
-                          <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                           </svg>
                           <div>
-                            <p className="text-sm font-medium text-green-800">{appliedCoupon.code}</p>
+                            <p className="text-sm font-semibold text-green-800">{appliedCoupon.code}</p>
                             <p className="text-xs text-green-600">
-                              {appliedCoupon.title} - {appliedCoupon.discountPercentage}% off
-                              {appliedCoupon.type === "promo" && " (Promo Code)"}
+                              {appliedCoupon.discountPercentage}% off
                             </p>
                           </div>
                         </div>
@@ -1738,39 +1819,38 @@ const ListingDetails = () => {
                           onClick={handleRemoveCoupon}
                           className="text-green-600 hover:text-green-800 transition-colors"
                         >
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                           </svg>
                         </button>
                       </div>
                     )}
                     {couponError && (
-                      <p className="text-xs text-red-600 font-light mt-1">{couponError}</p>
+                      <p className="text-xs text-red-600">{couponError}</p>
                     )}
-                  </div>
 
                   {/* Price Breakdown */}
                   {checkIn && checkOut && totalPrice > 0 && (
-                    <div className="border-t border-gray-200 pt-4 space-y-2">
-                      <div className="flex justify-between text-sm text-[#1C1C1E]/70">
+                      <div className="pt-3 border-t border-gray-200 space-y-2">
+                        <div className="flex justify-between text-sm text-gray-600">
                         <span>Subtotal</span>
                         <span>${(parseFloat(listing.price) * Math.ceil((new Date(checkOut + 'T00:00:00').getTime() - new Date(checkIn + 'T00:00:00').getTime()) / (1000 * 60 * 60 * 24))).toFixed(2)}</span>
                       </div>
                       {appliedCoupon && discountAmount > 0 && (
                         <div className="flex justify-between text-sm text-green-600">
-                          <span>Discount ({appliedCoupon.discountPercentage}%)</span>
+                            <span>Discount</span>
                           <span>-${discountAmount.toFixed(2)}</span>
                         </div>
                       )}
-                      <div className="flex justify-between text-lg font-semibold text-[#1C1C1E] pt-2 border-t border-gray-200">
-                        <span>Total</span>
-                        <span>${totalPrice.toFixed(2)}</span>
+                        <div className="flex justify-between items-center pt-2 border-t border-gray-200">
+                          <span className="text-base font-semibold text-gray-900">Total</span>
+                          <span className="text-2xl font-bold text-gray-900">${totalPrice.toFixed(2)}</span>
                       </div>
                     </div>
                   )}
 
                   {bookingError && (
-                    <div className="p-3 sm:p-4 bg-red-50 border-2 border-red-100 rounded-xl text-red-700 text-xs sm:text-sm font-light whitespace-pre-line">
+                      <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm whitespace-pre-line">
                       {bookingError}
                     </div>
                   )}
@@ -1778,17 +1858,17 @@ const ListingDetails = () => {
                   <button
                     type="submit"
                     disabled={!checkIn || !checkOut || totalPrice === 0 || !listing?.price}
-                    className="w-full bg-[#0071E3] text-white px-6 py-4 rounded-xl text-base sm:text-lg font-semibold hover:bg-[#0051D0] transition-all shadow-lg hover:shadow-xl disabled:bg-gray-300 disabled:cursor-not-allowed"
+                      className="w-full bg-[#0071E3] text-white px-6 py-3.5 rounded-lg text-base font-semibold hover:bg-[#0051D0] transition-all shadow-lg hover:shadow-xl disabled:bg-gray-300 disabled:cursor-not-allowed disabled:shadow-none"
                   >
                     Reserve
                   </button>
 
-                  <p className="text-xs sm:text-sm text-center text-[#1C1C1E]/60 font-light">
+                    <p className="text-xs text-center text-gray-500">
                     You won't be charged yet
                   </p>
                 </form>
               ) : (
-                <div className="space-y-6">
+                  <div className="p-5 space-y-6">
                   <div className="text-center">
                     <div className="text-5xl mb-4">✅</div>
                     <h3 className="text-xl font-semibold text-[#1C1C1E] mb-2">
@@ -2002,8 +2082,8 @@ const ListingDetails = () => {
                 </div>
               )}
             </div>
-            </div>
           </div>
+        </div>
         </section>
       </div>
 

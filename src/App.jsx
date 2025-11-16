@@ -4,6 +4,7 @@ import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import Login from "./Login";
 import Signup from "./Signup";
 import Home from "./pages/Home";
+import Explore from "./pages/Explore";
 import CreateListing from "./pages/host/CreateListing";
 import CreateListingFlow from "./pages/host/CreateListingFlow";
 import ListingDetails from "./pages/guest/ListingDetails";
@@ -25,6 +26,7 @@ function App() {
     <Router>
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/explore" element={<Explore />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/verify-email" element={<VerifyEmail />} />

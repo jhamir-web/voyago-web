@@ -81,17 +81,7 @@ const Header = () => {
                 Home
               </Link>
               <Link
-                to="/#listings"
-                onClick={(e) => {
-                  e.preventDefault();
-                  navigate("/");
-                  setTimeout(() => {
-                    const listingsSection = document.querySelector('.listing-section');
-                    if (listingsSection) {
-                      listingsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    }
-                  }, 100);
-                }}
+                to="/explore"
                 className="text-sm font-light text-white/90 hover:text-white transition-colors duration-200"
               >
                 Explore
@@ -296,18 +286,8 @@ const Header = () => {
               Home
             </Link>
             <Link
-              to="/#listings"
-              onClick={(e) => {
-                e.preventDefault();
-                setMobileMenuOpen(false);
-                navigate("/");
-                setTimeout(() => {
-                  const listingsSection = document.querySelector('.listing-section');
-                  if (listingsSection) {
-                    listingsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                  }
-                }, 100);
-              }}
+              to="/explore"
+              onClick={() => setMobileMenuOpen(false)}
               className="block text-sm font-light text-white/90 hover:text-white transition-all duration-200 py-2 hover:translate-x-1"
             >
               Explore

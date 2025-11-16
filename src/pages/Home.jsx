@@ -309,8 +309,7 @@ const Home = () => {
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [selectedStartDate, setSelectedStartDate] = useState(null);
   const [selectedEndDate, setSelectedEndDate] = useState(null);
-  const [recommendedListings, setRecommendedListings] = useState([]);
-  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+  const [unavailableListings, setUnavailableListings] = useState(new Set());
 
   // Format date for display
   const formatDateDisplay = (dateString) => {
@@ -435,6 +434,63 @@ const Home = () => {
       setSelectedEndDate(null);
     }
   }, [checkIn, checkOut]);
+
+  // Fetch unavailable listings based on selected dates
+  useEffect(() => {
+    const fetchUnavailableListings = async () => {
+      if (!checkIn || !checkOut || listings.length === 0) {
+        setUnavailableListings(new Set());
+        return;
+      }
+
+      try {
+        const unavailable = new Set();
+        const checkInDate = new Date(checkIn + 'T00:00:00');
+        const checkOutDate = new Date(checkOut + 'T00:00:00');
+        checkInDate.setHours(0, 0, 0, 0);
+        checkOutDate.setHours(0, 0, 0, 0);
+
+        // Fetch existing bookings
+        const bookingsQuery = query(
+          collection(db, "bookings"),
+          where("status", "in", ["confirmed", "pending"])
+        );
+        const bookingsSnapshot = await getDocs(bookingsQuery);
+
+        bookingsSnapshot.forEach((doc) => {
+          const booking = doc.data();
+          if (!booking.checkIn || !booking.checkOut || !booking.listingId) return;
+
+          const bookingCheckIn = new Date(booking.checkIn);
+          const bookingCheckOut = new Date(booking.checkOut);
+          bookingCheckIn.setHours(0, 0, 0, 0);
+          bookingCheckOut.setHours(0, 0, 0, 0);
+
+          // Check for date overlap
+          const hasOverlap = (
+            (checkInDate >= bookingCheckIn && checkInDate <= bookingCheckOut) ||
+            (checkOutDate >= bookingCheckIn && checkOutDate <= bookingCheckOut) ||
+            (checkInDate <= bookingCheckIn && checkOutDate >= bookingCheckOut)
+          );
+
+          if (hasOverlap) {
+            unavailable.add(booking.listingId);
+          }
+        });
+
+        // Note: Blocked dates are stored at host level but should be per-listing
+        // For now, we only filter by actual bookings to avoid affecting all listings by the same host
+
+        setUnavailableListings(unavailable);
+      } catch (error) {
+        console.error("Error fetching unavailable listings:", error);
+        setUnavailableListings(new Set());
+      }
+    };
+
+    fetchUnavailableListings();
+  }, [checkIn, checkOut, listings]);
+
   const heroRef = useRef(null);
   const homesButtonRef = useRef(null);
   const experiencesButtonRef = useRef(null);
@@ -488,268 +544,6 @@ const Home = () => {
     };
   }, [filteredListings]);
 
-  // Fetch and calculate recommendations based on booking history
-  useEffect(() => {
-    const fetchRecommendations = async () => {
-      if (!currentUser || userRole !== "guest") {
-        setRecommendedListings([]);
-        return;
-      }
-
-      try {
-        setRecommendationsLoading(true);
-        
-        // Fetch guest's previous bookings
-        const bookingsQuery = query(
-          collection(db, "bookings"),
-          where("guestId", "==", currentUser.uid),
-          where("status", "in", ["confirmed", "completed"])
-        );
-        const bookingsSnapshot = await getDocs(bookingsQuery);
-        
-        if (bookingsSnapshot.empty) {
-          setRecommendedListings([]);
-          setRecommendationsLoading(false);
-          return;
-        }
-
-        const bookings = bookingsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        
-        // Extract preferences from bookings
-        const preferences = {
-          categories: {}, // place, service, experience
-          subcategories: {}, // subcategories (for places)
-          placeTypes: {}, // House, Cabin, Apartment, etc.
-          serviceTypes: {}, // Photography, Catering, etc.
-          activityTypes: {}, // Hiking, Food Tour, etc.
-          locations: {},
-          priceRange: { min: Infinity, max: 0, avg: 0 },
-          amenities: new Set(),
-          services: new Set(),
-          bookedListingIds: new Set()
-        };
-
-        let totalPrice = 0;
-        let priceCount = 0;
-
-        bookings.forEach(booking => {
-          // Track booked listings to exclude from recommendations
-          if (booking.listingId) {
-            preferences.bookedListingIds.add(booking.listingId);
-          }
-
-          // Get listing details to extract preferences
-          // We'll fetch listing data for each booking
-        });
-
-        // Fetch listing details for each booking to get preferences
-        const listingPromises = bookings.map(async (booking) => {
-          if (!booking.listingId) return null;
-          try {
-            const listingDoc = await getDoc(doc(db, "listings", booking.listingId));
-            if (listingDoc.exists()) {
-              return { id: listingDoc.id, ...listingDoc.data() };
-            }
-          } catch (error) {
-            console.error("Error fetching listing:", error);
-          }
-          return null;
-        });
-
-        const listingData = await Promise.all(listingPromises);
-        const validListings = listingData.filter(l => l !== null);
-
-        // Analyze preferences from listings
-        validListings.forEach(listing => {
-          // Main category preferences (place, service, experience)
-          if (listing.category) {
-            preferences.categories[listing.category] = (preferences.categories[listing.category] || 0) + 1;
-          }
-
-          // Subcategory preferences (for places)
-          if (listing.subcategory) {
-            preferences.subcategories[listing.subcategory] = (preferences.subcategories[listing.subcategory] || 0) + 1;
-          }
-
-          // Place type preferences (House, Cabin, Apartment, etc.)
-          if (listing.placeType) {
-            preferences.placeTypes[listing.placeType] = (preferences.placeTypes[listing.placeType] || 0) + 1;
-          }
-
-          // Service type preferences (Photography, Catering, etc.)
-          if (listing.serviceType) {
-            preferences.serviceTypes[listing.serviceType] = (preferences.serviceTypes[listing.serviceType] || 0) + 1;
-          }
-
-          // Activity type preferences (Hiking, Food Tour, etc.)
-          if (listing.activityType) {
-            preferences.activityTypes[listing.activityType] = (preferences.activityTypes[listing.activityType] || 0) + 1;
-          }
-
-          // Location preferences (extract city/province from location)
-          if (listing.location) {
-            const locationParts = listing.location.split(',').map(s => s.trim());
-            locationParts.forEach(part => {
-              preferences.locations[part] = (preferences.locations[part] || 0) + 1;
-            });
-          }
-
-          // Price range
-          if (listing.price) {
-            const price = parseFloat(listing.price);
-            if (price > 0) {
-              preferences.priceRange.min = Math.min(preferences.priceRange.min, price);
-              preferences.priceRange.max = Math.max(preferences.priceRange.max, price);
-              totalPrice += price;
-              priceCount++;
-            }
-          }
-
-          // Amenities
-          if (listing.amenities && Array.isArray(listing.amenities)) {
-            listing.amenities.forEach(amenity => preferences.amenities.add(amenity));
-          }
-
-          // Services
-          if (listing.services && Array.isArray(listing.services)) {
-            listing.services.forEach(service => preferences.services.add(service));
-          }
-        });
-
-        // Calculate average price
-        if (priceCount > 0) {
-          preferences.priceRange.avg = totalPrice / priceCount;
-        }
-
-        // Find most preferred category
-        const topCategory = Object.keys(preferences.categories).length > 0
-          ? Object.keys(preferences.categories).reduce((a, b) => 
-              preferences.categories[a] > preferences.categories[b] ? a : b
-            )
-          : null;
-
-        // Find most preferred subcategory
-        const topSubcategory = Object.keys(preferences.subcategories).length > 0
-          ? Object.keys(preferences.subcategories).reduce((a, b) => 
-              preferences.subcategories[a] > preferences.subcategories[b] ? a : b
-            )
-          : null;
-
-        // Find most preferred place type
-        const topPlaceType = Object.keys(preferences.placeTypes).length > 0
-          ? Object.keys(preferences.placeTypes).reduce((a, b) => 
-              preferences.placeTypes[a] > preferences.placeTypes[b] ? a : b
-            )
-          : null;
-
-        // Find most preferred service type
-        const topServiceType = Object.keys(preferences.serviceTypes).length > 0
-          ? Object.keys(preferences.serviceTypes).reduce((a, b) => 
-              preferences.serviceTypes[a] > preferences.serviceTypes[b] ? a : b
-            )
-          : null;
-
-        // Find most preferred activity type
-        const topActivityType = Object.keys(preferences.activityTypes).length > 0
-          ? Object.keys(preferences.activityTypes).reduce((a, b) => 
-              preferences.activityTypes[a] > preferences.activityTypes[b] ? a : b
-            )
-          : null;
-
-        // Find most preferred location
-        const topLocation = Object.keys(preferences.locations).length > 0
-          ? Object.keys(preferences.locations).reduce((a, b) => 
-              preferences.locations[a] > preferences.locations[b] ? a : b
-            )
-          : null;
-
-        // Fetch all active listings
-        const allListingsQuery = query(
-          collection(db, "listings"),
-          where("status", "==", "active")
-        );
-        const allListingsSnapshot = await getDocs(allListingsQuery);
-        const allListings = allListingsSnapshot.docs.map(doc => ({ 
-          id: doc.id, 
-          ...doc.data() 
-        }));
-
-        // Score and rank listings based on preferences
-        const scoredListings = allListings
-          .filter(listing => !preferences.bookedListingIds.has(listing.id)) // Exclude already booked
-          .map(listing => {
-            let score = 0;
-
-            // Main category match (highest weight - 35 points)
-            if (topCategory && listing.category === topCategory) {
-              score += 35;
-            }
-
-            // Subcategory match (for places - high weight - 25 points)
-            if (topSubcategory && listing.subcategory === topSubcategory) {
-              score += 25;
-            }
-
-            // Place type match (high weight - 20 points)
-            if (topPlaceType && listing.placeType === topPlaceType) {
-              score += 20;
-            }
-
-            // Service type match (high weight - 20 points)
-            if (topServiceType && listing.serviceType === topServiceType) {
-              score += 20;
-            }
-
-            // Activity type match (high weight - 20 points)
-            if (topActivityType && listing.activityType === topActivityType) {
-              score += 20;
-            }
-
-            // Location match (medium-high weight - 18 points)
-            if (topLocation && listing.location && listing.location.includes(topLocation)) {
-              score += 18;
-            }
-
-            // Price similarity (medium weight - 15 points)
-            if (listing.price && preferences.priceRange.avg > 0) {
-              const priceDiff = Math.abs(parseFloat(listing.price) - preferences.priceRange.avg);
-              const priceRange = preferences.priceRange.max - preferences.priceRange.min || 1;
-              const priceScore = Math.max(0, 15 * (1 - priceDiff / priceRange));
-              score += priceScore;
-            }
-
-            // Amenities match (medium weight - 12 points)
-            if (listing.amenities && Array.isArray(listing.amenities) && preferences.amenities.size > 0) {
-              const matchingAmenities = listing.amenities.filter(a => preferences.amenities.has(a)).length;
-              const amenityScore = (matchingAmenities / preferences.amenities.size) * 12;
-              score += amenityScore;
-            }
-
-            // Services match (low weight - 8 points)
-            if (listing.services && Array.isArray(listing.services) && preferences.services.size > 0) {
-              const matchingServices = listing.services.filter(s => preferences.services.has(s)).length;
-              const serviceScore = (matchingServices / preferences.services.size) * 8;
-              score += serviceScore;
-            }
-
-            return { listing, score };
-          })
-          .filter(item => item.score > 0) // Only include listings with some match
-          .sort((a, b) => b.score - a.score) // Sort by score descending
-          .slice(0, 6) // Get top 6 recommendations
-          .map(item => item.listing);
-
-        setRecommendedListings(scoredListings);
-      } catch (error) {
-        console.error("Error fetching recommendations:", error);
-        setRecommendedListings([]);
-      } finally {
-        setRecommendationsLoading(false);
-      }
-    };
-
-    fetchRecommendations();
-  }, [currentUser, userRole]);
 
   // Fetch listings from Firestore
   useEffect(() => {
@@ -896,11 +690,13 @@ const Home = () => {
       });
     }
 
-    // Note: Date filtering would require checking bookings, which is more complex
-    // For now, we'll just filter by category, search, and guests
+    // Filter by date availability
+    if (checkIn && checkOut && unavailableListings.size > 0) {
+      filtered = filtered.filter(listing => !unavailableListings.has(listing.id));
+    }
 
     setFilteredListings(filtered);
-  }, [listings, selectedCategory, searchQuery, guests]);
+  }, [listings, selectedCategory, searchQuery, guests, checkIn, checkOut, unavailableListings]);
 
 
   const handleLogout = async () => {
@@ -1011,11 +807,11 @@ const Home = () => {
       <div className="search-nav-section bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm" style={{ position: 'relative', overflow: 'visible' }}>
         <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6" style={{ overflow: 'visible' }}>
           {/* Category Navigation Tabs - Centered */}
-          <div className="category-filters flex flex-wrap justify-center items-center gap-3 sm:gap-6 md:gap-8 relative pb-1">
+          <div className="category-filters flex flex-wrap justify-center items-center gap-2 sm:gap-3 md:gap-4 relative mb-2">
             {/* Animated Underline - Moves to selected button */}
             {underlineStyle.width > 0 && (
               <div 
-                className="absolute bottom-0 h-0.5 bg-[#1C1C1E] transition-all duration-500 ease-out"
+                className="absolute bottom-0 h-1 bg-[#0071E3] rounded-full transition-all duration-500 ease-out"
                 style={{
                   width: `${underlineStyle.width}px`,
                   left: `${underlineStyle.left}px`
@@ -1026,35 +822,51 @@ const Home = () => {
             <button
               ref={homesButtonRef}
               onClick={() => setSelectedCategory("homes")}
-              className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-sm sm:text-base md:text-lg font-medium relative transition-colors duration-300"
+              className={`flex items-center gap-2.5 sm:gap-3 px-4 sm:px-5 md:px-6 py-2.5 sm:py-3 md:py-3.5 text-sm sm:text-base md:text-lg font-semibold relative transition-all duration-300 rounded-xl ${
+                selectedCategory === "homes" 
+                  ? "bg-[#0071E3]/10 text-[#0071E3]" 
+                  : "text-[#8E8E93] hover:text-[#1C1C1E] hover:bg-gray-100"
+              }`}
             >
-              <svg className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8" viewBox="0 0 24 24" fill="none">
-                {/* House body - light grey */}
-                <rect x="6" y="11" width="12" height="9" fill="#D1D1D6"/>
-                {/* Roof - dark grey */}
-                <path d="M3 11l9-8 9 8H3z" fill="#8E8E93"/>
-                {/* Door - red */}
-                <rect x="10" y="16" width="4" height="4" fill="#FF3B30"/>
-                {/* Bushes */}
-                <circle cx="9" cy="20" r="1.5" fill="#34C759"/>
-                <circle cx="15" cy="20" r="1.5" fill="#34C759"/>
-                {/* Tree */}
-                <circle cx="18" cy="18" r="2" fill="#30D158"/>
-                {/* Chimney */}
-                <rect x="7" y="7" width="2" height="4" fill="#1C1C1E"/>
-              </svg>
-              <span className={`font-semibold transition-colors duration-300 whitespace-nowrap ${selectedCategory === "homes" ? "text-[#1C1C1E]" : "text-[#717171]"}`}>
-                Homes
-              </span>
+              <div className={`w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 rounded-lg flex items-center justify-center transition-all duration-300 ${
+                selectedCategory === "homes" 
+                  ? "bg-[#0071E3]/20" 
+                  : "bg-gray-100"
+              }`}>
+                <svg className="w-5 h-5 sm:w-6 sm:h-6 md:w-7 md:h-7" viewBox="0 0 24 24" fill="none">
+                  {/* House body - light grey */}
+                  <rect x="6" y="11" width="12" height="9" fill={selectedCategory === "homes" ? "#0071E3" : "#D1D1D6"}/>
+                  {/* Roof - dark grey */}
+                  <path d="M3 11l9-8 9 8H3z" fill={selectedCategory === "homes" ? "#0051D0" : "#8E8E93"}/>
+                  {/* Door - red */}
+                  <rect x="10" y="16" width="4" height="4" fill={selectedCategory === "homes" ? "#FF3B30" : "#FF3B30"}/>
+                  {/* Bushes */}
+                  <circle cx="9" cy="20" r="1.5" fill={selectedCategory === "homes" ? "#34C759" : "#34C759"}/>
+                  <circle cx="15" cy="20" r="1.5" fill={selectedCategory === "homes" ? "#34C759" : "#34C759"}/>
+                  {/* Tree */}
+                  <circle cx="18" cy="18" r="2" fill={selectedCategory === "homes" ? "#30D158" : "#30D158"}/>
+                  {/* Chimney */}
+                  <rect x="7" y="7" width="2" height="4" fill={selectedCategory === "homes" ? "#1C1C1E" : "#1C1C1E"}/>
+                </svg>
+              </div>
+              <span className="whitespace-nowrap">Homes</span>
             </button>
             
             <button
               ref={experiencesButtonRef}
               onClick={() => setSelectedCategory("experiences")}
-              className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-sm sm:text-base md:text-lg font-medium relative transition-colors duration-300"
+              className={`flex items-center gap-2.5 sm:gap-3 px-4 sm:px-5 md:px-6 py-2.5 sm:py-3 md:py-3.5 text-sm sm:text-base md:text-lg font-semibold relative transition-all duration-300 rounded-xl ${
+                selectedCategory === "experiences" 
+                  ? "bg-[#0071E3]/10 text-[#0071E3]" 
+                  : "text-[#8E8E93] hover:text-[#1C1C1E] hover:bg-gray-100"
+              }`}
             >
-              <div className="relative">
-                <svg className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8" viewBox="0 0 24 24" fill="none">
+              <div className={`w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 rounded-lg flex items-center justify-center transition-all duration-300 ${
+                selectedCategory === "experiences" 
+                  ? "bg-[#0071E3]/20" 
+                  : "bg-gray-100"
+              }`}>
+                <svg className="w-5 h-5 sm:w-6 sm:h-6 md:w-7 md:h-7" viewBox="0 0 24 24" fill="none">
                   {/* Hot air balloon - red and orange */}
                   <ellipse cx="12" cy="8" rx="7" ry="6" fill="#FF385C"/>
                   <ellipse cx="12" cy="8" rx="5" ry="4" fill="#FF6B35"/>
@@ -1064,20 +876,25 @@ const Home = () => {
                   <line x1="9" y1="12" x2="10" y2="14" stroke="#8E8E93" strokeWidth="1.5" strokeLinecap="round"/>
                   <line x1="15" y1="12" x2="15" y2="14" stroke="#8E8E93" strokeWidth="1.5" strokeLinecap="round"/>
                 </svg>
-                <span className="absolute -top-1 -right-1 sm:-top-1.5 sm:-right-1.5 bg-[#0071E3] text-white text-[7px] sm:text-[8px] font-bold px-1 sm:px-1.5 py-0.5 rounded-full shadow-sm">NEW</span>
               </div>
-              <span className={`font-semibold transition-colors duration-300 whitespace-nowrap ${selectedCategory === "experiences" ? "text-[#1C1C1E]" : "text-[#717171]"}`}>
-                Experiences
-              </span>
+              <span className="whitespace-nowrap">Experiences</span>
             </button>
             
             <button
               ref={servicesButtonRef}
               onClick={() => setSelectedCategory("services")}
-              className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-sm sm:text-base md:text-lg font-medium relative transition-colors duration-300"
+              className={`flex items-center gap-2.5 sm:gap-3 px-4 sm:px-5 md:px-6 py-2.5 sm:py-3 md:py-3.5 text-sm sm:text-base md:text-lg font-semibold relative transition-all duration-300 rounded-xl ${
+                selectedCategory === "services" 
+                  ? "bg-[#0071E3]/10 text-[#0071E3]" 
+                  : "text-[#8E8E93] hover:text-[#1C1C1E] hover:bg-gray-100"
+              }`}
             >
-              <div className="relative">
-                <svg className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8" viewBox="0 0 24 24" fill="none">
+              <div className={`w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 rounded-lg flex items-center justify-center transition-all duration-300 ${
+                selectedCategory === "services" 
+                  ? "bg-[#0071E3]/20" 
+                  : "bg-gray-100"
+              }`}>
+                <svg className="w-5 h-5 sm:w-6 sm:h-6 md:w-7 md:h-7" viewBox="0 0 24 24" fill="none">
                   {/* Bell - silver/grey */}
                   <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 3 9.75 3 9.75h8s3-4.5 3-9.75c0-3.87-3.13-7-7-7z" fill="#C7C7CC"/>
                   <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 3 9.75 3 9.75h8s3-4.5 3-9.75c0-3.87-3.13-7-7-7z" fill="#E5E5EA" opacity="0.5"/>
@@ -1086,43 +903,46 @@ const Home = () => {
                   {/* Clapper */}
                   <circle cx="12" cy="12" r="1" fill="#8E8E93"/>
                 </svg>
-                <span className="absolute -top-1 -right-1 sm:-top-1.5 sm:-right-1.5 bg-[#0071E3] text-white text-[7px] sm:text-[8px] font-bold px-1 sm:px-1.5 py-0.5 rounded-full shadow-sm">NEW</span>
               </div>
-              <span className={`font-semibold transition-colors duration-300 whitespace-nowrap ${selectedCategory === "services" ? "text-[#1C1C1E]" : "text-[#717171]"}`}>
-                Services
-              </span>
+              <span className="whitespace-nowrap">Services</span>
             </button>
           </div>
 
           {/* Search & Filter Bar - Web Style */}
-          <div className="flex justify-center search-bar-container mt-4 sm:mt-6" style={{ overflow: 'visible', position: 'relative' }}>
-            <div className="w-full max-w-5xl px-2 sm:px-4 md:px-6" style={{ overflow: 'visible', position: 'relative' }}>
+          <div className="flex justify-center search-bar-container mt-6 sm:mt-8" style={{ overflow: 'visible', position: 'relative' }}>
+            <div className="w-full max-w-5xl px-3 sm:px-4 md:px-6" style={{ overflow: 'visible', position: 'relative' }}>
               <div 
-                className={`flex flex-col md:flex-row items-stretch md:items-center bg-white rounded-2xl shadow-lg transition-all duration-300 ease-out ${
-                  focusedField ? 'shadow-xl ring-2 ring-[#0071E3]/20' : 'hover:shadow-xl'
+                className={`flex flex-col md:flex-row items-stretch md:items-center bg-white rounded-3xl shadow-2xl border border-gray-100 transition-all duration-300 ease-out ${
+                  focusedField ? 'shadow-2xl ring-4 ring-[#0071E3]/10 scale-[1.01]' : 'hover:shadow-2xl hover:border-gray-200'
                 }`}
                 style={{ overflow: 'visible' }}
               >
                 {/* Where - Location Search with Icon */}
                 <div 
                   className={`flex-1 relative min-w-0 transition-all duration-300 ${
-                    focusedField === 'where' ? 'bg-gray-50/50' : ''
+                    focusedField === 'where' ? 'bg-[#0071E3]/5' : ''
                   }`}
                   onClick={() => setFocusedField('where')}
                 >
                   {/* Right Divider */}
-                  <div className="absolute right-0 top-0 bottom-0 w-px bg-gray-300 hidden md:block"></div>
-                  <div className="px-4 sm:px-5 md:px-6 py-3 sm:py-4 cursor-pointer hover:bg-gray-50/50 transition-all duration-200 rounded-t-2xl md:rounded-t-none md:rounded-l-2xl">
-                    <div className="flex items-center gap-2 sm:gap-3">
-                      <svg 
-                        className={`w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0 transition-all duration-300 ${
-                          focusedField === 'where' || searchQuery ? 'text-[#0071E3]' : 'text-[#8E8E93]'
-                        }`}
-                        fill="currentColor" 
-                        viewBox="0 0 24 24"
-                      >
-                        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
-                      </svg>
+                  <div className="absolute right-0 top-4 bottom-4 w-px bg-gray-200 hidden md:block"></div>
+                  <div className="px-5 sm:px-6 md:px-8 py-4 sm:py-5 cursor-pointer hover:bg-gray-50/50 transition-all duration-200 rounded-t-3xl md:rounded-t-none md:rounded-l-3xl">
+                    <div className="flex items-center gap-3 sm:gap-4">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 ${
+                        focusedField === 'where' || searchQuery ? 'bg-[#0071E3]/10' : 'bg-gray-100'
+                      }`}>
+                        <svg 
+                          className={`w-5 h-5 flex-shrink-0 transition-all duration-300 ${
+                            focusedField === 'where' || searchQuery ? 'text-[#0071E3]' : 'text-[#8E8E93]'
+                          }`}
+                          fill="none" 
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                      </div>
                       <div className="flex-1 min-w-0">
                         <input
                           type="text"
@@ -1131,7 +951,7 @@ const Home = () => {
                           onChange={(e) => setSearchQuery(e.target.value)}
                           onFocus={() => setFocusedField('where')}
                           onBlur={() => setTimeout(() => setFocusedField(null), 200)}
-                          className="search-where-input w-full text-sm sm:text-base text-[#1C1C1E] placeholder:text-[#8E8E93] focus:outline-none bg-transparent font-light transition-all duration-200"
+                          className="search-where-input w-full text-base sm:text-lg text-[#1C1C1E] placeholder:text-[#8E8E93] focus:outline-none bg-transparent font-light transition-all duration-200"
                         />
                       </div>
                     </div>
@@ -1140,17 +960,17 @@ const Home = () => {
 
                 {/* Available Dates - Single Calendar Input */}
                 <div 
-                  className={`flex-1 relative min-w-0 transition-all duration-300 border-t md:border-t-0 border-gray-200/50 md:border-none ${
-                    focusedField === 'dates' || showDatePicker ? 'bg-gray-50/50' : ''
+                  className={`flex-1 relative min-w-0 transition-all duration-300 border-t md:border-t-0 border-gray-100 md:border-none ${
+                    focusedField === 'dates' || showDatePicker ? 'bg-[#0071E3]/5' : ''
                   }`}
                   style={{ zIndex: showDatePicker ? 50 : 'auto' }}
                 >
                   {/* Left Divider */}
-                  <div className="absolute left-0 top-0 bottom-0 w-px bg-gray-300 hidden md:block"></div>
+                  <div className="absolute left-0 top-4 bottom-4 w-px bg-gray-200 hidden md:block"></div>
                   {/* Right Divider */}
-                  <div className="absolute right-0 top-0 bottom-0 w-px bg-gray-300 hidden md:block"></div>
+                  <div className="absolute right-0 top-4 bottom-4 w-px bg-gray-200 hidden md:block"></div>
                   <div 
-                    className="px-4 sm:px-5 md:px-6 py-3 sm:py-4 cursor-pointer hover:bg-gray-50/50 transition-all duration-200"
+                    className="px-5 sm:px-6 md:px-8 py-4 sm:py-5 cursor-pointer hover:bg-gray-50/50 transition-all duration-200"
                     onClick={() => {
                       if (!showDatePicker) {
                         // Initialize calendar to show current month or selected date's month
@@ -1165,21 +985,39 @@ const Home = () => {
                       setFocusedField('dates');
                     }}
                   >
-                    <label className="block text-[10px] sm:text-xs font-semibold text-[#1C1C1E]/70 mb-1 uppercase tracking-wider">
-                      Available Dates
-                    </label>
-                    <span className={`text-sm sm:text-base font-light transition-all duration-200 block ${
-                      checkIn || checkOut ? 'text-[#1C1C1E]' : 'text-[#8E8E93]'
-                    }`}>
-                      {checkIn || checkOut ? formatDateRangeDisplay() : 'Add dates'}
-                    </span>
+                    <div className="flex items-center gap-3 sm:gap-4">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 ${
+                        focusedField === 'dates' || showDatePicker || checkIn || checkOut ? 'bg-[#0071E3]/10' : 'bg-gray-100'
+                      }`}>
+                        <svg 
+                          className={`w-5 h-5 flex-shrink-0 transition-all duration-300 ${
+                            focusedField === 'dates' || showDatePicker || checkIn || checkOut ? 'text-[#0071E3]' : 'text-[#8E8E93]'
+                          }`}
+                          fill="none" 
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <label className="block text-[10px] sm:text-xs font-bold text-[#1C1C1E] mb-1.5 uppercase tracking-widest">
+                          Available Dates
+                        </label>
+                        <span className={`text-base sm:text-lg font-medium transition-all duration-200 block ${
+                          checkIn || checkOut ? 'text-[#1C1C1E]' : 'text-[#8E8E93]'
+                        }`}>
+                          {checkIn || checkOut ? formatDateRangeDisplay() : 'Add dates'}
+                        </span>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Date Picker Modal - Custom Calendar */}
                   {showDatePicker && (
                     <>
                       <div 
-                        className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40" 
+                        className="fixed inset-0 bg-transparent z-40" 
                         onClick={() => {
                           setShowDatePicker(false);
                           setFocusedField(null);
@@ -1189,11 +1027,11 @@ const Home = () => {
                         }}
                       ></div>
                       <div 
-                        className="absolute left-0 md:left-auto right-0 md:right-auto top-full mt-2 w-full md:w-auto min-w-[320px] bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-visible z-50 animate-slideDownFadeIn"
+                        className="absolute left-0 md:left-auto right-0 md:right-auto top-full mt-3 w-full md:w-auto min-w-[340px] bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-visible z-50 animate-slideDownFadeIn"
                         onClick={(e) => e.stopPropagation()}
                         style={{ zIndex: 50 }}
                       >
-                        <div className="p-4 sm:p-6">
+                        <div className="p-5 sm:p-6">
                           {/* Calendar Header */}
                           <div className="flex items-center justify-between mb-4">
                             <button
@@ -1325,39 +1163,57 @@ const Home = () => {
 
                 {/* Guests - Dropdown */}
                 <div 
-                  className={`flex-1 relative min-w-0 transition-all duration-300 border-t md:border-t-0 border-gray-200/50 md:border-none ${
-                    focusedField === 'guests' || showGuestMenu ? 'bg-gray-50/50' : ''
+                  className={`flex-1 relative min-w-0 transition-all duration-300 border-t md:border-t-0 border-gray-100 md:border-none ${
+                    focusedField === 'guests' || showGuestMenu ? 'bg-[#0071E3]/5' : ''
                   }`}
                   style={{ zIndex: showGuestMenu ? 50 : 'auto' }}
                 >
                   {/* Left Divider */}
-                  <div className="absolute left-0 top-0 bottom-0 w-px bg-gray-300 hidden md:block"></div>
+                  <div className="absolute left-0 top-4 bottom-4 w-px bg-gray-200 hidden md:block"></div>
                   <div 
-                    className="px-4 sm:px-5 md:px-6 py-3 sm:py-4 cursor-pointer hover:bg-gray-50/50 transition-all duration-200 rounded-b-2xl md:rounded-b-none md:rounded-r-2xl"
+                    className="px-5 sm:px-6 md:px-8 py-4 sm:py-5 cursor-pointer hover:bg-gray-50/50 transition-all duration-200 rounded-b-3xl md:rounded-b-none md:rounded-r-3xl"
                     onClick={() => {
                       setShowGuestMenu(!showGuestMenu);
                       setFocusedField('guests');
                     }}
                   >
-                    <label className="block text-[10px] sm:text-xs font-semibold text-[#1C1C1E]/70 mb-1 uppercase tracking-wider">
-                      Guests
-                    </label>
-                    <div className="flex items-center justify-between">
-                      <span className={`text-sm sm:text-base font-light transition-all duration-200 ${
-                        guests > 1 ? 'text-[#1C1C1E]' : 'text-[#8E8E93]'
+                    <div className="flex items-center gap-3 sm:gap-4">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 ${
+                        focusedField === 'guests' || showGuestMenu || guests > 1 ? 'bg-[#0071E3]/10' : 'bg-gray-100'
                       }`}>
-                        {guests === 1 ? 'Add guests' : `${guests} ${guests === 1 ? 'guest' : 'guests'}`}
-                      </span>
-                      {guests > 1 && (
                         <svg 
-                          className={`w-4 h-4 sm:w-5 sm:h-5 text-[#8E8E93] transition-all duration-300 ${showGuestMenu ? 'rotate-180' : ''}`}
+                          className={`w-5 h-5 flex-shrink-0 transition-all duration-300 ${
+                            focusedField === 'guests' || showGuestMenu || guests > 1 ? 'text-[#0071E3]' : 'text-[#8E8E93]'
+                          }`}
                           fill="none" 
                           stroke="currentColor" 
                           viewBox="0 0 24 24"
                         >
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                         </svg>
-                      )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <label className="block text-[10px] sm:text-xs font-bold text-[#1C1C1E] mb-1.5 uppercase tracking-widest">
+                          Guests
+                        </label>
+                        <div className="flex items-center justify-between">
+                          <span className={`text-base sm:text-lg font-medium transition-all duration-200 ${
+                            guests > 1 ? 'text-[#1C1C1E]' : 'text-[#8E8E93]'
+                          }`}>
+                            {guests === 1 ? 'Add guests' : `${guests} ${guests === 1 ? 'guest' : 'guests'}`}
+                          </span>
+                          {(guests > 1 || showGuestMenu) && (
+                            <svg 
+                              className={`w-5 h-5 text-[#8E8E93] transition-all duration-300 ${showGuestMenu ? 'rotate-180' : ''}`}
+                              fill="none" 
+                              stroke="currentColor" 
+                              viewBox="0 0 24 24"
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -1365,7 +1221,7 @@ const Home = () => {
                   {showGuestMenu && (
                     <>
                       <div 
-                        className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40" 
+                        className="fixed inset-0 bg-transparent z-40" 
                         onClick={() => {
                           setShowGuestMenu(false);
                           setFocusedField(null);
@@ -1375,11 +1231,11 @@ const Home = () => {
                         }}
                       ></div>
                       <div 
-                        className="absolute right-0 md:right-auto left-0 md:left-auto top-full mt-2 w-full md:w-64 bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-visible z-50 animate-slideDownFadeIn"
+                        className="absolute right-0 md:right-auto left-0 md:left-auto top-full mt-3 w-full md:w-72 bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-visible z-50 animate-slideDownFadeIn"
                         onClick={(e) => e.stopPropagation()}
                         style={{ zIndex: 50 }}
                       >
-                        <div className="py-1">
+                        <div className="py-2">
                           {[1, 2, 3, 4, 5, 6].map((num) => (
                             <button
                               key={num}
@@ -1419,10 +1275,10 @@ const Home = () => {
                 </div>
 
                 {/* Search Button - Inline on Desktop, Bottom on Mobile */}
-                <div className="p-2 sm:p-3 md:p-2 flex items-center justify-center md:flex-shrink-0 border-t md:border-t-0 border-gray-200/50 md:border-none">
+                <div className="p-3 sm:p-4 md:p-4 flex items-center justify-center md:flex-shrink-0 border-t md:border-t-0 border-gray-100 md:border-none">
                   <button
                     type="button"
-                    className="flex items-center justify-center w-full md:w-auto px-6 md:px-0 md:w-10 md:h-10 lg:w-11 lg:h-11 bg-[#0071E3] text-white rounded-full hover:bg-[#0051D0] transition-all duration-300 shadow-md hover:shadow-xl hover:scale-105 active:scale-95 transform py-3 md:py-0"
+                    className="flex items-center justify-center gap-2 w-full md:w-auto px-6 md:px-4 md:w-14 md:h-14 lg:w-16 lg:h-16 bg-gradient-to-r from-[#0071E3] to-[#0051D0] text-white rounded-full hover:from-[#0051D0] hover:to-[#003D9E] transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transform py-4 md:py-0 group"
                     aria-label="Search"
                     onClick={() => {
                       // Scroll to listings or trigger search/filter
@@ -1433,7 +1289,7 @@ const Home = () => {
                     }}
                   >
                     <svg
-                      className="w-5 h-5 sm:w-6 sm:h-6 md:w-4 md:h-4"
+                      className="w-5 h-5 sm:w-6 sm:h-6 md:w-6 lg:w-7 transition-transform duration-300 group-hover:scale-110"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -1441,7 +1297,7 @@ const Home = () => {
                     >
                       <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
-                    <span className="md:hidden ml-2 text-sm sm:text-base font-medium">Search</span>
+                    <span className="md:hidden ml-2 text-base sm:text-lg font-semibold">Search</span>
                   </button>
                 </div>
               </div>
@@ -1449,51 +1305,6 @@ const Home = () => {
           </div>
         </div>
       </div>
-
-      {/* Recommendations Section - Only show for guests with booking history */}
-      {currentUser && userRole === "guest" && recommendedListings.length > 0 && (
-        <div className="px-3 sm:px-4 md:px-6 py-6 sm:py-8 md:py-12 bg-gradient-to-br from-[#F5F5F7] to-white">
-          <div className="w-full max-w-6xl mx-auto">
-            <div className="mb-6 sm:mb-8">
-              <div className="flex items-center gap-3 mb-2">
-                <svg className="w-6 h-6 sm:w-8 sm:h-8 text-[#0071E3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                </svg>
-                <h2 className="text-xl sm:text-2xl md:text-3xl font-semibold text-[#1C1C1E]">
-                  Recommended for You
-                </h2>
-              </div>
-              <p className="text-sm sm:text-base text-[#717171]">
-                Based on your previous bookings and preferences
-              </p>
-            </div>
-
-            {recommendationsLoading ? (
-              <div className="text-center py-12">
-                <div className="text-[#1C1C1E]/50 font-light">Loading recommendations...</div>
-              </div>
-            ) : (
-              <div className="listing-section">
-                {/* Mobile: Horizontal Scroll */}
-                <div className="flex sm:hidden gap-4 overflow-x-auto pb-4 scrollbar-hide -mx-3 sm:-mx-4 md:-mx-6 px-3 sm:px-4 md:px-6 mb-8">
-                  {recommendedListings.map((listing) => (
-                    <div key={listing.id} className="flex-shrink-0 w-[280px]">
-                      <ListingCard listing={listing} currentUser={currentUser} selectedCategory={selectedCategory} />
-                    </div>
-                  ))}
-                </div>
-
-                {/* Desktop: Grid */}
-                <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
-                  {recommendedListings.map((listing) => (
-                    <ListingCard key={listing.id} listing={listing} currentUser={currentUser} selectedCategory={selectedCategory} />
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Main Content Section - Airbnb Style Listings */}
       <div id="listings" className="listings-section px-3 sm:px-4 md:px-6 py-6 sm:py-8 md:py-12 bg-white">

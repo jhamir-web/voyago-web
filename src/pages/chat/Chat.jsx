@@ -961,6 +961,7 @@ const Chat = () => {
                   : (userData.name || userData.email || "User");
                 const initials = getOtherPartyInitialsFromData(userData);
                 const isSelected = conv.otherUserId === selectedOtherUserId;
+                const userPhoto = userData.profilePhotoUrl || userData.photoURL || null;
 
   return (
           <button
@@ -976,7 +977,21 @@ const Chat = () => {
                   >
                     <div className="flex items-start gap-3">
                       {/* Avatar */}
-                      <div className="w-12 h-12 rounded-full bg-[#0071E3] flex items-center justify-center text-white font-medium text-sm flex-shrink-0">
+                      {userPhoto ? (
+                        <img 
+                          src={userPhoto} 
+                          alt={fullName}
+                          className="w-12 h-12 rounded-full object-cover flex-shrink-0"
+                          onError={(e) => {
+                            e.target.style.display = 'none';
+                            e.target.nextSibling.style.display = 'flex';
+                          }}
+                        />
+                      ) : null}
+                      <div 
+                        className="w-12 h-12 rounded-full bg-[#0071E3] flex items-center justify-center text-white font-medium text-sm flex-shrink-0"
+                        style={{ display: userPhoto ? 'none' : 'flex' }}
+                      >
                         {initials}
                       </div>
                       
@@ -1013,9 +1028,31 @@ const Chat = () => {
               {/* Conversation Header */}
               <div className="p-4 sm:p-6 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
                 <div className="flex items-center gap-3 flex-1 min-w-0">
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-[#0071E3] flex items-center justify-center text-white font-medium text-sm flex-shrink-0">
-                    {getOtherPartyInitials()}
-                  </div>
+                  {(() => {
+                    const otherUserPhoto = otherUserData?.profilePhotoUrl || otherUserData?.photoURL || null;
+                    const otherUserInitials = getOtherPartyInitials();
+                    return (
+                      <>
+                        {otherUserPhoto ? (
+                          <img 
+                            src={otherUserPhoto} 
+                            alt={getOtherPartyName()}
+                            className="w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover flex-shrink-0"
+                            onError={(e) => {
+                              e.target.style.display = 'none';
+                              e.target.nextSibling.style.display = 'flex';
+                            }}
+                          />
+                        ) : null}
+                        <div 
+                          className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-[#0071E3] flex items-center justify-center text-white font-medium text-sm flex-shrink-0"
+                          style={{ display: otherUserPhoto ? 'none' : 'flex' }}
+                        >
+                          {otherUserInitials}
+                        </div>
+                      </>
+                    );
+                  })()}
                   <div className="flex-1 min-w-0">
                     <h3 className="text-base sm:text-lg font-semibold text-[#1C1C1E] truncate">
                       {getOtherPartyName()}
@@ -1121,12 +1158,42 @@ const Chat = () => {
                 );
               }
               
+              // Get profile photo for other user
+              const otherUserPhoto = otherUserData?.profilePhotoUrl || otherUserData?.photoURL || null;
+              const otherUserInitials = getOtherPartyInitials();
+              
               return (
                 <div
                   key={message.id}
-                          className={`flex ${isOwnMessage ? "justify-end" : "justify-start"} mb-3 animate-fadeInUp`}
+                          className={`flex ${isOwnMessage ? "justify-end" : "justify-start"} mb-3 animate-fadeInUp gap-2`}
                           style={{ animationDelay: `${index * 0.05}s` }}
                 >
+                          {/* Profile Picture for other user's messages */}
+                          {!isOwnMessage && !isSameSender && (
+                            <div className="flex-shrink-0">
+                              {otherUserPhoto ? (
+                                <img 
+                                  src={otherUserPhoto} 
+                                  alt={message.senderName || "User"}
+                                  className="w-8 h-8 rounded-full object-cover"
+                                  onError={(e) => {
+                                    e.target.style.display = 'none';
+                                    e.target.nextSibling.style.display = 'flex';
+                                  }}
+                                />
+                              ) : null}
+                              <div 
+                                className="w-8 h-8 rounded-full bg-[#0071E3] flex items-center justify-center text-white text-xs font-semibold"
+                                style={{ display: otherUserPhoto ? 'none' : 'flex' }}
+                              >
+                                {otherUserInitials}
+                              </div>
+                            </div>
+                          )}
+                          {/* Spacer for same sender messages */}
+                          {!isOwnMessage && isSameSender && (
+                            <div className="w-8 flex-shrink-0"></div>
+                          )}
                           <div className={`max-w-[75%] sm:max-w-[65%] ${isOwnMessage ? "items-end" : "items-start"} flex flex-col`}>
                     {!isOwnMessage && !isSameSender && (
                               <div className="text-xs text-[#8E8E93] font-medium mb-2 px-3">
@@ -1249,9 +1316,31 @@ const Chat = () => {
               
               {/* Profile Info */}
               <div className="text-center mb-6">
-                <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-[#0071E3] flex items-center justify-center text-white font-semibold text-xl">
-                  {getOtherPartyInitials()}
-                </div>
+                {(() => {
+                  const otherUserPhoto = otherUserData?.profilePhotoUrl || otherUserData?.photoURL || null;
+                  const otherUserInitials = getOtherPartyInitials();
+                  return (
+                    <>
+                      {otherUserPhoto ? (
+                        <img 
+                          src={otherUserPhoto} 
+                          alt={getOtherPartyName()}
+                          className="w-20 h-20 mx-auto mb-4 rounded-full object-cover"
+                          onError={(e) => {
+                            e.target.style.display = 'none';
+                            e.target.nextSibling.style.display = 'flex';
+                          }}
+                        />
+                      ) : null}
+                      <div 
+                        className="w-20 h-20 mx-auto mb-4 rounded-full bg-[#0071E3] flex items-center justify-center text-white font-semibold text-xl"
+                        style={{ display: otherUserPhoto ? 'none' : 'flex' }}
+                      >
+                        {otherUserInitials}
+                      </div>
+                    </>
+                  );
+                })()}
                 <h4 className="text-lg font-semibold text-[#1C1C1E] mb-2">
                   {getOtherPartyName()}
                 </h4>
