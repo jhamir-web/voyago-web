@@ -79,6 +79,7 @@ const AdminDashboard = () => {
     const path = location.pathname;
       if (path.includes("/admin/cashout")) setActiveSection("cashout");
       else if (path.includes("/admin/pending")) setActiveSection("pending");
+      else if (path.includes("/admin/subscriptions")) setActiveSection("subscriptions");
       else if (path.includes("/admin/termination")) setActiveSection("termination");
       else if (path.includes("/admin/servicefees")) setActiveSection("servicefees");
       else if (path.includes("/admin/policy")) setActiveSection("policy");
@@ -323,6 +324,12 @@ const AdminDashboard = () => {
               onClick={() => handleSectionChange("pending")}
             />
             <NavItem
+              icon="subscriptions"
+              label="Subscriptions"
+              active={activeSection === "subscriptions"}
+              onClick={() => handleSectionChange("subscriptions")}
+            />
+            <NavItem
               icon="termination"
               label="Termination Appeals"
               active={activeSection === "termination"}
@@ -439,6 +446,7 @@ const AdminDashboard = () => {
           {activeSection === "home" && <HomeContent stats={stats} formatCurrency={formatCurrency} />}
           {activeSection === "cashout" && <CashoutApprovalsContent />}
           {activeSection === "pending" && <PendingPayoutsContent />}
+          {activeSection === "subscriptions" && <SubscriptionsContent />}
           {activeSection === "termination" && <TerminationAppealsContent />}
           {activeSection === "servicefees" && <ServiceFeesContent />}
           {activeSection === "policy" && <PolicyContent />}
@@ -477,6 +485,11 @@ const NavItem = ({ icon, label, active, onClick }) => {
     pending: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+    subscriptions: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
       </svg>
     ),
     termination: (
@@ -3956,6 +3969,338 @@ const AdminProfileModal = ({ isOpen, onClose, adminUserData, currentUser }) => {
       </div>
     </div>,
     document.body
+  );
+};
+
+// Subscriptions Content Component
+const SubscriptionsContent = () => {
+  const [hosts, setHosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("all"); // all, active, inactive
+  const [searchTerm, setSearchTerm] = useState("");
+
+  useEffect(() => {
+    fetchSubscribedHosts();
+    
+    const unsubscribe = onSnapshot(
+      collection(db, "users"),
+      (snapshot) => {
+        const data = snapshot.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter(user => {
+            const roles = user.roles || (user.role ? [user.role] : []);
+            return roles.includes("host") || user.role === "host";
+          });
+        processHostsData(data);
+      },
+      (error) => {
+        console.error("Error fetching hosts:", error);
+        setLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  const fetchSubscribedHosts = async () => {
+    try {
+      setLoading(true);
+      const usersQuery = query(collection(db, "users"));
+      const snapshot = await getDocs(usersQuery);
+      const data = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter(user => {
+          const roles = user.roles || (user.role ? [user.role] : []);
+          return roles.includes("host") || user.role === "host";
+        });
+      processHostsData(data);
+    } catch (error) {
+      console.error("Error fetching subscribed hosts:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const processHostsData = async (hostsData) => {
+    // Fetch active listings count for each host
+    const hostsWithListings = await Promise.all(
+      hostsData.map(async (host) => {
+        try {
+          const listingsQuery = query(
+            collection(db, "listings"),
+            where("hostId", "==", host.id),
+            where("status", "==", "active")
+          );
+          const listingsSnapshot = await getDocs(listingsQuery);
+          const activeListingsCount = listingsSnapshot.size;
+
+          // Get plan limits
+          const planLimits = {
+            starter: 3,
+            pro: 10,
+            elite: 1000
+          };
+
+          const subscriptionPlan = host.subscriptionPlan || "starter";
+          const subscriptionStatus = host.subscriptionStatus || "inactive";
+          const listingLimit = planLimits[subscriptionPlan] || 3;
+
+          return {
+            ...host,
+            activeListingsCount,
+            listingLimit,
+            subscriptionPlan,
+            subscriptionStatus
+          };
+        } catch (error) {
+          console.error(`Error fetching listings for host ${host.id}:`, error);
+          return {
+            ...host,
+            activeListingsCount: 0,
+            listingLimit: 3,
+            subscriptionPlan: host.subscriptionPlan || "starter",
+            subscriptionStatus: host.subscriptionStatus || "inactive"
+          };
+        }
+      })
+    );
+
+    setHosts(hostsWithListings);
+  };
+
+  const getPlanDetails = (plan) => {
+    const plans = {
+      starter: { name: "Starter", price: "$29", limit: 3, color: "bg-gray-100 text-gray-800" },
+      pro: { name: "Pro", price: "$79", limit: 10, color: "bg-blue-100 text-blue-800" },
+      elite: { name: "Elite", price: "$199", limit: "Unlimited", color: "bg-purple-100 text-purple-800" }
+    };
+    return plans[plan] || plans.starter;
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return "N/A";
+    try {
+      const date = dateString.toDate ? dateString.toDate() : new Date(dateString);
+      return date.toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'short', 
+        day: 'numeric' 
+      });
+    } catch (error) {
+      return "N/A";
+    }
+  };
+
+  const filteredHosts = hosts.filter(host => {
+    // Filter by subscription status
+    if (filter === "active" && host.subscriptionStatus !== "active") return false;
+    if (filter === "inactive" && host.subscriptionStatus === "active") return false;
+
+    // Filter by search term
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
+      const name = (host.displayName || host.name || host.email || "").toLowerCase();
+      const email = (host.email || "").toLowerCase();
+      const plan = (host.subscriptionPlan || "").toLowerCase();
+      
+      if (!name.includes(searchLower) && !email.includes(searchLower) && !plan.includes(searchLower)) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  const activeSubscriptions = hosts.filter(h => h.subscriptionStatus === "active").length;
+  const inactiveSubscriptions = hosts.filter(h => h.subscriptionStatus !== "active").length;
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-sm border border-gray-100 animate-fadeInUp">
+        <div className="text-center py-12">
+          <div className="w-16 h-16 border-4 border-[#0071E3] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-[#8E8E93] font-light">Loading subscriptions...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 animate-fadeInUp">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+        <div>
+          <h2 className="text-2xl sm:text-3xl font-light text-[#1C1C1E] mb-2">Subscriptions</h2>
+          <p className="text-sm text-[#8E8E93] font-light">View all hosts and their subscription plans</p>
+        </div>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div className="bg-white rounded-xl p-4 sm:p-6 border border-gray-200 shadow-sm">
+          <p className="text-sm text-[#8E8E93] font-light mb-2">Total Hosts</p>
+          <p className="text-2xl sm:text-3xl font-light text-[#1C1C1E]">{hosts.length}</p>
+        </div>
+        <div className="bg-gradient-to-r from-[#34C759] to-[#30D158] rounded-xl p-4 sm:p-6 text-white shadow-lg">
+          <p className="text-sm text-white/90 font-light mb-2">Active Subscriptions</p>
+          <p className="text-2xl sm:text-3xl font-light text-white">{activeSubscriptions}</p>
+        </div>
+        <div className="bg-white rounded-xl p-4 sm:p-6 border border-gray-200 shadow-sm">
+          <p className="text-sm text-[#8E8E93] font-light mb-2">Inactive Subscriptions</p>
+          <p className="text-2xl sm:text-3xl font-light text-[#1C1C1E]">{inactiveSubscriptions}</p>
+        </div>
+      </div>
+
+      {/* Filters and Search */}
+      <div className="bg-white rounded-xl p-4 sm:p-6 border border-gray-200 shadow-sm">
+        <div className="flex flex-col sm:flex-row gap-4 mb-4">
+          {/* Filter Buttons */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => setFilter("all")}
+              className={`px-4 py-2 rounded-lg text-sm font-light transition-all ${
+                filter === "all"
+                  ? "bg-[#0071E3] text-white"
+                  : "bg-gray-100 text-[#1C1C1E] hover:bg-gray-200"
+              }`}
+            >
+              All ({hosts.length})
+            </button>
+            <button
+              onClick={() => setFilter("active")}
+              className={`px-4 py-2 rounded-lg text-sm font-light transition-all ${
+                filter === "active"
+                  ? "bg-[#34C759] text-white"
+                  : "bg-gray-100 text-[#1C1C1E] hover:bg-gray-200"
+              }`}
+            >
+              Active ({activeSubscriptions})
+            </button>
+            <button
+              onClick={() => setFilter("inactive")}
+              className={`px-4 py-2 rounded-lg text-sm font-light transition-all ${
+                filter === "inactive"
+                  ? "bg-red-100 text-red-700"
+                  : "bg-gray-100 text-[#1C1C1E] hover:bg-gray-200"
+              }`}
+            >
+              Inactive ({inactiveSubscriptions})
+            </button>
+          </div>
+
+          {/* Search */}
+          <div className="flex-1">
+            <input
+              type="text"
+              placeholder="Search by name, email, or plan..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0071E3]/20 focus:border-[#0071E3] text-sm"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Hosts List */}
+      {filteredHosts.length === 0 ? (
+        <div className="bg-white rounded-xl p-12 text-center border border-gray-200 shadow-sm">
+          <div className="text-5xl mb-4">👥</div>
+          <h3 className="text-xl font-light text-[#1C1C1E] mb-2">No hosts found</h3>
+          <p className="text-sm text-[#8E8E93] font-light">
+            {searchTerm ? "Try adjusting your search criteria." : "No hosts with subscriptions found."}
+          </p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-[#8E8E93] uppercase tracking-wider">Host</th>
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-[#8E8E93] uppercase tracking-wider">Email</th>
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-[#8E8E93] uppercase tracking-wider">Plan</th>
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-[#8E8E93] uppercase tracking-wider">Status</th>
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-[#8E8E93] uppercase tracking-wider">Listings</th>
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-[#8E8E93] uppercase tracking-wider">Start Date</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredHosts.map((host, index) => {
+                  const planDetails = getPlanDetails(host.subscriptionPlan);
+                  const isActive = host.subscriptionStatus === "active";
+                  
+                  return (
+                    <tr key={host.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#0071E3] to-[#0051D0] flex items-center justify-center text-white font-medium text-sm overflow-hidden">
+                            {host.photoURL || host.profilePhotoUrl ? (
+                              <img
+                                src={host.photoURL || host.profilePhotoUrl}
+                                alt={host.displayName || host.name || "Host"}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <span>{(host.displayName || host.name || host.email || "H")[0].toUpperCase()}</span>
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-[#1C1C1E]">
+                              {host.displayName || host.name || "Unknown"}
+                            </p>
+                            {host.firstName && host.lastName && (
+                              <p className="text-xs text-[#8E8E93] font-light">
+                                {host.firstName} {host.lastName}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                        <p className="text-sm text-[#1C1C1E] font-light">{host.email || "N/A"}</p>
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${planDetails.color}`}>
+                          {planDetails.name}
+                        </span>
+                        <p className="text-xs text-[#8E8E93] font-light mt-1">{planDetails.price}</p>
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                          isActive 
+                            ? "bg-green-100 text-green-800" 
+                            : "bg-red-100 text-red-800"
+                        }`}>
+                          {isActive ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-[#1C1C1E]">
+                            {host.activeListingsCount}
+                          </span>
+                          <span className="text-xs text-[#8E8E93] font-light">
+                            / {host.listingLimit === 1000 ? "∞" : host.listingLimit}
+                          </span>
+                        </div>
+                        {host.activeListingsCount >= host.listingLimit && host.listingLimit < 1000 && (
+                          <p className="text-xs text-red-600 font-light mt-1">Limit reached</p>
+                        )}
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                        <p className="text-sm text-[#1C1C1E] font-light">
+                          {formatDate(host.subscriptionStartDate)}
+                        </p>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 
