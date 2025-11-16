@@ -15,6 +15,8 @@ import WalletModal from "../../components/WalletModal";
 import RewardsCenterModal from "../../components/RewardsCenterModal";
 import CouponManagementModal from "../../components/CouponManagementModal";
 import GuestWishlistsModal from "../../components/GuestWishlistsModal";
+import ProfileModal from "../../components/ProfileModal";
+import GuestProfileModal from "../../components/GuestProfileModal";
 import { awardPoints, POINTS_PER_BOOKING } from "../../utils/points";
 
 const HostHomePage = () => {
@@ -28,6 +30,9 @@ const HostHomePage = () => {
   const [showRewards, setShowRewards] = useState(false);
   const [showCoupons, setShowCoupons] = useState(false);
   const [showWishlists, setShowWishlists] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [showGuestProfile, setShowGuestProfile] = useState(false);
+  const [selectedGuest, setSelectedGuest] = useState(null);
   const [stats, setStats] = useState({
     totalIncome: 0,
     activeListings: 0,
@@ -342,16 +347,18 @@ const HostHomePage = () => {
                       className="absolute right-0 top-full mt-2 w-64 sm:w-72 bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden"
                       style={{ zIndex: 50 }}
                     >
-                      <Link
-                        to="/profile"
-                        onClick={() => setShowBurgerMenu(false)}
-                        className="flex items-center gap-3 px-4 py-3 text-sm text-[#1C1C1E] hover:bg-gray-50 transition-all duration-200"
+                      <button
+                        onClick={() => {
+                          setShowBurgerMenu(false);
+                          setShowProfile(true);
+                        }}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-[#1C1C1E] hover:bg-gray-50 transition-all duration-200 text-left"
                       >
                         <svg className="w-5 h-5 text-[#0071E3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                         </svg>
                         <span className="font-light">Profile</span>
-                      </Link>
+                      </button>
 
                       <button
                         onClick={() => {
@@ -454,6 +461,16 @@ const HostHomePage = () => {
       <RewardsCenterModal isOpen={showRewards} onClose={() => setShowRewards(false)} />
       <CouponManagementModal isOpen={showCoupons} onClose={() => setShowCoupons(false)} />
       <GuestWishlistsModal isOpen={showWishlists} onClose={() => setShowWishlists(false)} />
+      <ProfileModal isOpen={showProfile} onClose={() => setShowProfile(false)} />
+      <GuestProfileModal 
+        isOpen={showGuestProfile} 
+        onClose={() => {
+          setShowGuestProfile(false);
+          setSelectedGuest(null);
+        }}
+        guestId={selectedGuest?.guestId}
+        guestData={selectedGuest?.guestData}
+      />
     </div>
   );
 };
@@ -2433,7 +2450,20 @@ const HostBookingsContent = () => {
                   </div>
 
                   {/* Guest Information */}
-                  <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
+                  <button
+                    onClick={() => {
+                      setSelectedGuest({
+                        guestId: booking.guestId,
+                        guestData: {
+                          guestName: booking.guestName,
+                          guestEmail: booking.guestEmail,
+                          guestPhotoUrl: booking.guestPhotoUrl
+                        }
+                      });
+                      setShowGuestProfile(true);
+                    }}
+                    className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 hover:bg-gray-50 -mx-4 px-4 py-2 rounded-lg transition-colors cursor-pointer text-left w-full"
+                  >
                     <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0">
                       {booking.guestPhotoUrl ? (
                         <img
@@ -2455,7 +2485,10 @@ const HostBookingsContent = () => {
                         {booking.guestEmail}
                       </p>
                     </div>
-                  </div>
+                    <svg className="w-5 h-5 text-[#8E8E93] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
 
                   {/* Booking Dates */}
                   <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
