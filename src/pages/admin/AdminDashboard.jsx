@@ -3977,7 +3977,9 @@ const SubscriptionsContent = () => {
   const [hosts, setHosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all"); // all, active, inactive
+  const [planFilter, setPlanFilter] = useState("all"); // all, starter, pro, elite
   const [searchTerm, setSearchTerm] = useState("");
+  const [generatingReport, setGeneratingReport] = useState(false);
 
   useEffect(() => {
     fetchSubscribedHosts();
@@ -4096,6 +4098,9 @@ const SubscriptionsContent = () => {
     if (filter === "active" && host.subscriptionStatus !== "active") return false;
     if (filter === "inactive" && host.subscriptionStatus === "active") return false;
 
+    // Filter by plan
+    if (planFilter !== "all" && host.subscriptionPlan !== planFilter) return false;
+
     // Filter by search term
     if (searchTerm) {
       const searchLower = searchTerm.toLowerCase();
@@ -4113,6 +4118,267 @@ const SubscriptionsContent = () => {
 
   const activeSubscriptions = hosts.filter(h => h.subscriptionStatus === "active").length;
   const inactiveSubscriptions = hosts.filter(h => h.subscriptionStatus !== "active").length;
+
+  const handleGenerateSubscriptionReport = () => {
+    try {
+      setGeneratingReport(true);
+
+      const pdf = new jsPDF();
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      let yPosition = 0;
+      const margin = 20;
+      const lineHeight = 7;
+      const sectionSpacing = 12;
+
+      // Brand colors
+      const primaryBlue = [0, 113, 227]; // #0071E3
+      const darkBlue = [0, 81, 208]; // #0051D0
+      const darkGray = [28, 28, 30]; // #1C1C1E
+      const lightGray = [142, 142, 147]; // #8E8E93
+      const bgGray = [245, 245, 247]; // #F5F5F7
+      const green = [52, 199, 89]; // #34C759
+      const red = [255, 59, 48]; // #FF3B30
+
+      // Helper function to add header on each page
+      const addHeader = () => {
+        pdf.setFillColor(...primaryBlue);
+        pdf.rect(0, 0, pageWidth, 50, "F");
+        
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFontSize(24);
+        pdf.setFont("helvetica", "bold");
+        pdf.text("Voyago", margin, 20);
+        
+        pdf.setFontSize(10);
+        pdf.setFont("helvetica", "normal");
+        pdf.setTextColor(255, 255, 255, 0.8);
+        pdf.text("Admin Report", margin, 30);
+        
+        pdf.setDrawColor(...darkBlue);
+        pdf.setLineWidth(2);
+        pdf.line(0, 50, pageWidth, 50);
+        
+        pdf.setTextColor(...darkGray);
+        yPosition = 65;
+      };
+
+      // Helper function to add a new page if needed
+      const checkPageBreak = (requiredSpace = 20) => {
+        if (yPosition + requiredSpace > pageHeight - margin) {
+          pdf.addPage();
+          addHeader();
+          return true;
+        }
+        return false;
+      };
+
+      // Add header to first page
+      addHeader();
+
+      // Report Title
+      pdf.setFontSize(22);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...darkGray);
+      
+      let reportTitle = "Subscriptions Report";
+      if (filter !== "all") {
+        reportTitle += ` - ${filter.charAt(0).toUpperCase() + filter.slice(1)}`;
+      }
+      if (planFilter !== "all") {
+        const planName = planFilter.charAt(0).toUpperCase() + planFilter.slice(1);
+        reportTitle += ` - ${planName} Plan`;
+      }
+      
+      pdf.text(reportTitle, margin, yPosition);
+      yPosition += 12;
+
+      // Generated date
+      pdf.setFontSize(9);
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...lightGray);
+      pdf.text(`Generated: ${new Date().toLocaleString('en-US', { 
+        year: 'numeric', 
+        month: 'short', 
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })}`, margin, yPosition);
+      yPosition += sectionSpacing + 5;
+
+      // Summary Section
+      checkPageBreak(50);
+      const summaryStartY = yPosition;
+      pdf.setFillColor(...bgGray);
+      pdf.roundedRect(margin, yPosition - 5, pageWidth - (margin * 2), 45, 3, 3, "F");
+      
+      pdf.setFontSize(14);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...darkGray);
+      pdf.text("Summary", margin + 8, yPosition + 5);
+      yPosition += 12;
+
+      pdf.setFontSize(10);
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...darkGray);
+      
+      pdf.text(`Total Hosts:`, margin + 10, yPosition);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...primaryBlue);
+      pdf.text(`${filteredHosts.length}`, margin + 60, yPosition);
+      yPosition += lineHeight;
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...darkGray);
+      pdf.text(`Active Subscriptions:`, margin + 10, yPosition);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...green);
+      pdf.text(`${filteredHosts.filter(h => h.subscriptionStatus === "active").length}`, margin + 70, yPosition);
+      yPosition += lineHeight;
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...darkGray);
+      pdf.text(`Inactive Subscriptions:`, margin + 10, yPosition);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...red);
+      pdf.text(`${filteredHosts.filter(h => h.subscriptionStatus !== "active").length}`, margin + 75, yPosition);
+      yPosition += lineHeight;
+
+      // Plan breakdown
+      const planCounts = {
+        starter: filteredHosts.filter(h => h.subscriptionPlan === "starter").length,
+        pro: filteredHosts.filter(h => h.subscriptionPlan === "pro").length,
+        elite: filteredHosts.filter(h => h.subscriptionPlan === "elite").length
+      };
+      
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...darkGray);
+      pdf.text(`Plan Breakdown:`, margin + 10, yPosition);
+      yPosition += lineHeight;
+      pdf.text(`  Starter: ${planCounts.starter}`, margin + 15, yPosition);
+      yPosition += lineHeight;
+      pdf.text(`  Pro: ${planCounts.pro}`, margin + 15, yPosition);
+      yPosition += lineHeight;
+      pdf.text(`  Elite: ${planCounts.elite}`, margin + 15, yPosition);
+
+      yPosition += sectionSpacing + 10;
+
+      // Hosts Table
+      checkPageBreak(30);
+      
+      pdf.setFontSize(16);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...darkGray);
+      pdf.text("Host Details", margin, yPosition);
+      yPosition += sectionSpacing;
+
+      if (filteredHosts.length === 0) {
+        pdf.setFontSize(10);
+        pdf.setFont("helvetica", "normal");
+        pdf.setTextColor(...lightGray);
+        pdf.text("No hosts found matching the selected filters.", margin, yPosition);
+      } else {
+        // Table headers
+        checkPageBreak(30);
+        pdf.setFillColor(...primaryBlue);
+        pdf.roundedRect(margin, yPosition - 5, pageWidth - (margin * 2), 15, 2, 2, "F");
+        
+        pdf.setFontSize(9);
+        pdf.setFont("helvetica", "bold");
+        pdf.setTextColor(255, 255, 255);
+        
+        pdf.text("Host", margin + 5, yPosition + 3);
+        pdf.text("Email", margin + 50, yPosition + 3);
+        pdf.text("Plan", margin + 105, yPosition + 3);
+        pdf.text("Status", margin + 130, yPosition + 3);
+        pdf.text("Listings", margin + 160, yPosition + 3);
+        pdf.text("Start Date", margin + 180, yPosition + 3);
+        
+        yPosition += 12;
+
+        // Table rows
+        filteredHosts.forEach((host, index) => {
+          checkPageBreak(25);
+          
+          const planDetails = getPlanDetails(host.subscriptionPlan);
+          const isActive = host.subscriptionStatus === "active";
+          
+          // Alternate row background
+          if (index % 2 === 0) {
+            pdf.setFillColor(...bgGray);
+            pdf.roundedRect(margin, yPosition - 4, pageWidth - (margin * 2), 12, 1, 1, "F");
+          }
+
+          pdf.setFontSize(8);
+          pdf.setFont("helvetica", "normal");
+          pdf.setTextColor(...darkGray);
+
+          // Host name (truncate if too long)
+          const hostName = host.displayName || host.name || "Unknown";
+          const displayName = hostName.length > 20 ? hostName.substring(0, 17) + "..." : hostName;
+          pdf.text(displayName, margin + 5, yPosition + 3);
+
+          // Email (truncate if too long)
+          const email = host.email || "N/A";
+          const displayEmail = email.length > 25 ? email.substring(0, 22) + "..." : email;
+          pdf.text(displayEmail, margin + 50, yPosition + 3);
+
+          // Plan
+          pdf.text(planDetails.name, margin + 105, yPosition + 3);
+
+          // Status
+          pdf.setTextColor(...(isActive ? green : red));
+          pdf.text(isActive ? "Active" : "Inactive", margin + 130, yPosition + 3);
+
+          // Listings
+          pdf.setTextColor(...darkGray);
+          const listingsText = `${host.activeListingsCount} / ${host.listingLimit === 1000 ? "∞" : host.listingLimit}`;
+          pdf.text(listingsText, margin + 160, yPosition + 3);
+
+          // Start Date
+          const startDateText = formatDate(host.subscriptionStartDate);
+          pdf.text(startDateText, margin + 180, yPosition + 3);
+
+          yPosition += 12;
+        });
+      }
+
+      // Footer
+      const totalPages = pdf.internal.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        pdf.setPage(i);
+        pdf.setFontSize(8);
+        pdf.setFont("helvetica", "normal");
+        pdf.setTextColor(...lightGray);
+        pdf.text(
+          `Page ${i} of ${totalPages}`,
+          pageWidth / 2,
+          pageHeight - 10,
+          { align: "center" }
+        );
+      }
+
+      // Generate filename
+      let filename = "Subscriptions_Report";
+      if (filter !== "all") {
+        filename += `_${filter}`;
+      }
+      if (planFilter !== "all") {
+        filename += `_${planFilter}`;
+      }
+      filename += `_${new Date().toISOString().split('T')[0]}.pdf`;
+
+      // Save PDF
+      pdf.save(filename);
+      
+      setGeneratingReport(false);
+      alert(`Report generated successfully! ${filteredHosts.length} host(s) included.`);
+    } catch (error) {
+      console.error("Error generating subscription report:", error);
+      setGeneratingReport(false);
+      alert("Failed to generate report. Please try again.");
+    }
+  };
 
   if (loading) {
     return (
@@ -4133,6 +4399,25 @@ const SubscriptionsContent = () => {
           <h2 className="text-2xl sm:text-3xl font-light text-[#1C1C1E] mb-2">Subscriptions</h2>
           <p className="text-sm text-[#8E8E93] font-light">View all hosts and their subscription plans</p>
         </div>
+        <button
+          onClick={handleGenerateSubscriptionReport}
+          disabled={generatingReport || filteredHosts.length === 0}
+          className="px-6 py-3 bg-[#0071E3] text-white rounded-xl font-medium hover:bg-[#0051D0] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-md hover:shadow-lg"
+        >
+          {generatingReport ? (
+            <>
+              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              <span>Generating...</span>
+            </>
+          ) : (
+            <>
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span>Generate Report</span>
+            </>
+          )}
+        </button>
       </div>
 
       {/* Stats Cards */}
@@ -4153,9 +4438,10 @@ const SubscriptionsContent = () => {
 
       {/* Filters and Search */}
       <div className="bg-white rounded-xl p-4 sm:p-6 border border-gray-200 shadow-sm">
-        <div className="flex flex-col sm:flex-row gap-4 mb-4">
-          {/* Filter Buttons */}
-          <div className="flex gap-2">
+        <div className="flex flex-col gap-4">
+          {/* Status Filter Buttons */}
+          <div className="flex flex-wrap gap-2">
+            <span className="text-xs font-medium text-[#8E8E93] self-center mr-2">Status:</span>
             <button
               onClick={() => setFilter("all")}
               className={`px-4 py-2 rounded-lg text-sm font-light transition-all ${
@@ -4185,6 +4471,51 @@ const SubscriptionsContent = () => {
               }`}
             >
               Inactive ({inactiveSubscriptions})
+            </button>
+          </div>
+
+          {/* Plan Filter Buttons */}
+          <div className="flex flex-wrap gap-2">
+            <span className="text-xs font-medium text-[#8E8E93] self-center mr-2">Plan:</span>
+            <button
+              onClick={() => setPlanFilter("all")}
+              className={`px-4 py-2 rounded-lg text-sm font-light transition-all ${
+                planFilter === "all"
+                  ? "bg-[#0071E3] text-white"
+                  : "bg-gray-100 text-[#1C1C1E] hover:bg-gray-200"
+              }`}
+            >
+              All Plans
+            </button>
+            <button
+              onClick={() => setPlanFilter("starter")}
+              className={`px-4 py-2 rounded-lg text-sm font-light transition-all ${
+                planFilter === "starter"
+                  ? "bg-gray-800 text-white"
+                  : "bg-gray-100 text-[#1C1C1E] hover:bg-gray-200"
+              }`}
+            >
+              Starter
+            </button>
+            <button
+              onClick={() => setPlanFilter("pro")}
+              className={`px-4 py-2 rounded-lg text-sm font-light transition-all ${
+                planFilter === "pro"
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-100 text-[#1C1C1E] hover:bg-gray-200"
+              }`}
+            >
+              Pro
+            </button>
+            <button
+              onClick={() => setPlanFilter("elite")}
+              className={`px-4 py-2 rounded-lg text-sm font-light transition-all ${
+                planFilter === "elite"
+                  ? "bg-purple-600 text-white"
+                  : "bg-gray-100 text-[#1C1C1E] hover:bg-gray-200"
+              }`}
+            >
+              Elite
             </button>
           </div>
 
