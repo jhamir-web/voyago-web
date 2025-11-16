@@ -3,6 +3,19 @@
   "buildCommand": "echo 'No build needed - API only'",
   "outputDirectory": ".",
   "framework": null,
+  "routes": [
+    {
+      "src": "/api/payout",
+      "methods": ["GET", "POST", "OPTIONS"],
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS, GET",
+        "Access-Control-Allow-Headers": "Content-Type, x-api-key, Authorization",
+        "Access-Control-Max-Age": "86400"
+      },
+      "dest": "/api/payout.js"
+    }
+  ],
   "headers": [
     {
       "source": "/api/(.*)",

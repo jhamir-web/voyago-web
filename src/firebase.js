@@ -37,8 +37,10 @@ export const processPayPalPayout = async (data, auth) => {
   // Call the Vercel serverless function
   const url = `${PAYOUT_SERVER_URL}/api/payout`;
   
+  // Use mode: 'cors' explicitly and handle OPTIONS in the function
   const response = await fetch(url, {
     method: "POST",
+    mode: "cors",
     headers: {
       "Content-Type": "application/json",
       "x-api-key": PAYOUT_API_KEY
