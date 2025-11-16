@@ -1,44 +1,45 @@
 // Vercel Serverless Function for PayPal Payouts
 // This file automatically deploys to Vercel when you push to GitHub
 
-// Helper function to set CORS headers
-function setCorsHeaders(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS, GET');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-api-key, Authorization');
-  res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
-}
-
 export default async function handler(req, res) {
-  // Handle CORS preflight requests FIRST - before ANY other logic
-  if (req.method === 'OPTIONS') {
-    console.log('[CORS] OPTIONS preflight request received');
-    setCorsHeaders(res);
-    return res.status(200).end();
+  // CRITICAL: Handle OPTIONS FIRST - before ANY other code runs
+  // This must be the absolute first check
+  const method = req.method;
+  
+  if (method === 'OPTIONS') {
+    console.log('[CORS] OPTIONS preflight request - returning CORS headers immediately');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-api-key, Authorization');
+    res.setHeader('Access-Control-Max-Age', '86400');
+    res.status(200);
+    res.end();
+    return; // MUST return here - no other code should run
   }
 
-  // Set CORS headers for all other requests too
-  setCorsHeaders(res);
+  // For all other requests, set CORS headers first
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-api-key, Authorization');
 
-  // Only allow POST requests for actual operations
-  if (req.method !== 'POST') {
-    console.log(`[ERROR] Method not allowed: ${req.method}`);
+  // Only allow POST requests
+  if (method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // API key check (skip for OPTIONS, which we already handled above)
+  // NOW check API key (OPTIONS already returned above, so this won't run for OPTIONS)
   const apiKey = req.headers['x-api-key'] || req.headers['authorization']?.replace('Bearer ', '');
   const expectedKey = process.env.PAYOUT_API_KEY || 'voyago-secret-api-key-2024';
   
   if (!apiKey || apiKey !== expectedKey) {
-    console.error('[AUTH] API Key check failed. Received:', apiKey ? 'Present (invalid)' : 'Missing', 'Expected:', expectedKey.substring(0, 10) + '...');
+    console.error('[AUTH FAIL] API Key check failed');
     return res.status(401).json({ error: 'Unauthorized - Invalid API key' });
   }
   
-  console.log('[AUTH] API Key validated successfully');
+  console.log('[AUTH SUCCESS] API Key validated');
 
   try {
-    // Import PayPal SDK dynamically (Vercel supports this)
+    // Import PayPal SDK dynamically
     const payoutsSdk = await import('@paypal/payouts-sdk');
     
     // PayPal Configuration from environment variables
@@ -48,7 +49,7 @@ export default async function handler(req, res) {
 
     // Validate PayPal credentials
     if (!PAYPAL_SECRET) {
-      console.error('PayPal Secret is missing! Check environment variables.');
+      console.error('[PAYPAL ERROR] Secret is missing!');
       return res.status(500).json({
         error: 'PayPal Secret is not configured. Please add PAYPAL_SECRET to Vercel environment variables.',
         details: 'The PayPal Payout API requires both Client ID and Secret to work.'
@@ -100,21 +101,17 @@ export default async function handler(req, res) {
     });
 
     // Execute PayPal Payout
-    console.log('Executing PayPal payout request...');
-    console.log('PayPal Client ID:', PAYPAL_CLIENT_ID ? 'Set' : 'Missing');
-    console.log('PayPal Secret:', PAYPAL_SECRET ? 'Set' : 'Missing');
-    console.log('PayPal Mode:', PAYPAL_MODE);
-    console.log('Recipient Email:', recipientEmail);
-    console.log('Amount:', amount);
+    console.log('[PAYPAL] Executing payout request...');
+    console.log('[PAYPAL] Recipient:', recipientEmail);
+    console.log('[PAYPAL] Amount:', amount);
     
     let response;
     try {
       response = await client.execute(request);
-      console.log('PayPal response status:', response.statusCode);
-      console.log('PayPal response:', JSON.stringify(response.result, null, 2));
+      console.log('[PAYPAL SUCCESS] Response status:', response.statusCode);
+      console.log('[PAYPAL SUCCESS] Batch ID:', response.result?.batch_header?.payout_batch_id);
     } catch (paypalError) {
-      console.error('PayPal API Error:', paypalError);
-      console.error('PayPal Error Details:', JSON.stringify(paypalError, null, 2));
+      console.error('[PAYPAL ERROR] API call failed:', paypalError.message);
       throw paypalError;
     }
 
@@ -122,7 +119,7 @@ export default async function handler(req, res) {
 
     // Check if payout was successful
     if (!result || !result.batch_header) {
-      console.error('Invalid PayPal response:', result);
+      console.error('[PAYPAL ERROR] Invalid response from PayPal');
       return res.status(500).json({
         error: 'PayPal payout failed: Invalid response from PayPal',
         details: 'No batch header in response',
@@ -133,9 +130,9 @@ export default async function handler(req, res) {
     const batchId = result.batch_header?.payout_batch_id;
     const batchStatus = result.batch_header?.batch_status;
 
-    console.log('PayPal Payout Success!');
-    console.log('Batch ID:', batchId);
-    console.log('Batch Status:', batchStatus);
+    console.log('[PAYPAL SUCCESS] Payout initiated successfully');
+    console.log('[PAYPAL SUCCESS] Batch ID:', batchId);
+    console.log('[PAYPAL SUCCESS] Batch Status:', batchStatus);
 
     return res.status(200).json({
       success: true,
@@ -145,7 +142,7 @@ export default async function handler(req, res) {
       result: result
     });
   } catch (error) {
-    console.error('PayPal Payout Error:', error);
+    console.error('[ERROR] PayPal Payout Error:', error.message);
     
     return res.status(500).json({
       error: `PayPal payout failed: ${error.message}`,
