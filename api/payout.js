@@ -1,34 +1,41 @@
 // Vercel Serverless Function for PayPal Payouts
 // This file automatically deploys to Vercel when you push to GitHub
 
-export default async function handler(req, res) {
-  // Set CORS headers for ALL requests first (including OPTIONS)
+// Helper function to set CORS headers
+function setCorsHeaders(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS, GET');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-api-key, Authorization');
   res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
+}
 
-  // Handle CORS preflight requests (OPTIONS) - MUST return before any auth checks
+export default async function handler(req, res) {
+  // Handle CORS preflight requests FIRST - before ANY other logic
   if (req.method === 'OPTIONS') {
-    console.log('OPTIONS preflight request received - returning CORS headers');
+    console.log('[CORS] OPTIONS preflight request received');
+    setCorsHeaders(res);
     return res.status(200).end();
   }
 
-  // Only allow POST requests
+  // Set CORS headers for all other requests too
+  setCorsHeaders(res);
+
+  // Only allow POST requests for actual operations
   if (req.method !== 'POST') {
+    console.log(`[ERROR] Method not allowed: ${req.method}`);
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // API key check (only for POST requests, not OPTIONS)
+  // API key check (skip for OPTIONS, which we already handled above)
   const apiKey = req.headers['x-api-key'] || req.headers['authorization']?.replace('Bearer ', '');
   const expectedKey = process.env.PAYOUT_API_KEY || 'voyago-secret-api-key-2024';
   
   if (!apiKey || apiKey !== expectedKey) {
-    console.error('API Key check failed. Received:', apiKey ? 'Present' : 'Missing', 'Expected:', expectedKey);
+    console.error('[AUTH] API Key check failed. Received:', apiKey ? 'Present (invalid)' : 'Missing', 'Expected:', expectedKey.substring(0, 10) + '...');
     return res.status(401).json({ error: 'Unauthorized - Invalid API key' });
   }
   
-  console.log('API Key validated successfully');
+  console.log('[AUTH] API Key validated successfully');
 
   try {
     // Import PayPal SDK dynamically (Vercel supports this)
