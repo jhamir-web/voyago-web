@@ -218,7 +218,7 @@ const HostHomePage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#F5F5F7] flex">
+    <div className="h-screen bg-[#F5F5F7] flex overflow-hidden">
       {/* Sidebar */}
       <aside className={`fixed lg:static inset-y-0 left-0 z-40 w-64 bg-white border-r border-gray-200 transform transition-transform duration-300 ease-out ${
         sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
@@ -435,7 +435,7 @@ const HostHomePage = () => {
         {/* Content Area */}
         <main className="flex-1 overflow-hidden flex flex-col">
           {activeSection === "messages" ? (
-            <div className="flex-1 overflow-hidden p-4 sm:p-6 lg:p-8">
+            <div className="flex-1 overflow-hidden p-4 sm:p-6 lg:p-8 min-h-0 h-0">
               <HostMessagesContent />
             </div>
           ) : (
@@ -921,13 +921,13 @@ const HostListingsContent = () => {
     
     if (selectedFilter === "all") return true;
     if (selectedFilter === "place") {
-      return listing.category === "resort" || listing.category === "hotel" || listing.category === "transient";
+      return listing.category === "place" || listing.category === "resort" || listing.category === "hotel" || listing.category === "transient" || listing.placeType || listing.subcategory;
     }
     if (selectedFilter === "services") {
-      return listing.services && Array.isArray(listing.services) && listing.services.length > 0;
+      return listing.category === "service" || listing.serviceType;
     }
     if (selectedFilter === "experiences") {
-      return listing.experiences && Array.isArray(listing.experiences) && listing.experiences.length > 0;
+      return listing.category === "experience" || listing.activityType;
     }
     return true;
   });
@@ -1553,37 +1553,60 @@ const HostListingsContent = () => {
                   </button>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                   {drafts.map((draft, index) => (
                     <div
                       key={draft.id}
-                      className="bg-gray-50 rounded-xl p-5 sm:p-6 border border-gray-200 hover:border-gray-300 transition-all duration-200 animate-fadeInUp"
+                      className="group bg-white rounded-2xl p-5 sm:p-6 border border-gray-200 hover:border-[#0071E3] hover:shadow-xl transition-all duration-300 animate-fadeInUp cursor-pointer"
                       style={{ animationDelay: `${index * 0.05}s` }}
+                      onClick={() => {
+                        setShowDraftsModal(false);
+                        handleEditDraft(draft.id);
+                      }}
                     >
-                      <div className="flex items-start gap-4 mb-4 sm:mb-5">
-                        {draft.imageUrl ? (
+                      {/* Image Section */}
+                      <div className="relative w-full h-48 sm:h-52 mb-4 rounded-xl overflow-hidden bg-gray-100">
+                        {draft.imageUrl || (draft.imageUrls && draft.imageUrls.length > 0) ? (
                           <img
-                            src={draft.imageUrl}
-                            alt={draft.title}
-                            className="w-20 h-20 sm:w-24 sm:h-24 rounded-lg object-cover flex-shrink-0"
+                            src={draft.imageUrl || draft.imageUrls[0]}
+                            alt={draft.title || "Draft listing"}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                           />
                         ) : (
-                          <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-lg bg-gray-200 flex items-center justify-center flex-shrink-0">
-                            <svg className="w-8 h-8 sm:w-10 sm:h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
+                            <svg className="w-16 h-16 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                             </svg>
                           </div>
                         )}
-                        <div className="flex-1 min-w-0">
-                          <h4 className="text-base sm:text-lg font-medium text-[#1C1C1E] mb-1.5 sm:mb-2 line-clamp-1">
-                            {draft.title || "Untitled Listing"}
-                          </h4>
-                          <p className="text-xs sm:text-sm text-[#8E8E93] font-light line-clamp-2 mb-2 sm:mb-3">
-                            {draft.location || "No location"}
-                          </p>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm sm:text-base font-medium text-[#1C1C1E]">${draft.price || 0}</span>
-                            <span className="text-xs sm:text-sm text-[#8E8E93] font-light">
+                        {/* Draft Badge */}
+                        <div className="absolute top-3 left-3 px-3 py-1 bg-[#FF9500] text-white text-xs font-medium rounded-full">
+                          Draft
+                        </div>
+                        {/* Image Count Badge */}
+                        {draft.imageUrls && draft.imageUrls.length > 1 && (
+                          <div className="absolute top-3 right-3 px-2 py-1 bg-black/60 text-white text-xs font-medium rounded-full backdrop-blur-sm">
+                            {draft.imageUrls.length} photos
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Content Section */}
+                      <div className="mb-4">
+                        <h4 className="text-lg sm:text-xl font-semibold text-[#1C1C1E] mb-2 line-clamp-1 group-hover:text-[#0071E3] transition-colors">
+                          {draft.title || "Untitled Listing"}
+                        </h4>
+                        <div className="flex items-center gap-2 text-sm text-[#8E8E93] mb-3">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                          <span className="line-clamp-1">{draft.location || draft.city || "No location"}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-baseline gap-1">
+                            <span className="text-2xl font-bold text-[#1C1C1E]">${draft.price || 0}</span>
+                            <span className="text-sm text-[#8E8E93] font-light">
                               {draft.activityType 
                                 ? "/person" 
                                 : draft.serviceType 
@@ -1593,24 +1616,41 @@ const HostListingsContent = () => {
                                 : "/person"}
                             </span>
                           </div>
+                          {draft.maxGuests && (
+                            <div className="flex items-center gap-1 text-sm text-[#8E8E93]">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                              </svg>
+                              <span>{draft.maxGuests}</span>
+                            </div>
+                          )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 sm:gap-3">
+
+                      {/* Action Buttons */}
+                      <div className="flex items-center gap-2 sm:gap-3 pt-4 border-t border-gray-100">
                         <button
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setShowDraftsModal(false);
                             handleEditDraft(draft.id);
                           }}
-                          className="flex-1 px-4 sm:px-5 py-2.5 sm:py-3 bg-[#0071E3] text-white rounded-lg text-sm sm:text-base font-medium hover:bg-[#0051D0] transition-colors duration-200"
+                          className="flex-1 px-4 sm:px-5 py-2.5 sm:py-3 bg-[#0071E3] text-white rounded-lg text-sm sm:text-base font-medium hover:bg-[#0051D0] transition-colors duration-200 flex items-center justify-center gap-2"
                         >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
                           Edit
                         </button>
                         <button
-                          onClick={() => handleDeleteDraft(draft.id)}
-                          className="px-3 sm:px-4 py-2.5 sm:py-3 bg-red-500 text-white rounded-lg text-sm sm:text-base font-medium hover:bg-red-600 transition-colors duration-200"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteDraft(draft.id);
+                          }}
+                          className="px-4 sm:px-5 py-2.5 sm:py-3 bg-red-50 text-red-600 rounded-lg text-sm sm:text-base font-medium hover:bg-red-100 transition-colors duration-200"
                           title="Delete draft"
                         >
-                          <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                           </svg>
                         </button>
@@ -2094,48 +2134,90 @@ const HostBookingsContent = () => {
       const bookingAmount = booking.totalPrice || 0;
       
       if (newStatus === "confirmed") {
-        // Add to host's pending balance (not actual wallet - money is held by admin)
+        // Add directly to host's wallet balance (money goes directly to host's e-wallet)
         const hostRef = doc(db, "users", booking.hostId);
         const hostDoc = await getDoc(hostRef);
         
         if (hostDoc.exists()) {
           const hostData = hostDoc.data();
-          const currentPendingBalance = hostData.pendingBalance || 0;
+          const currentWalletBalance = hostData.walletBalance || 0;
           const hostTransactions = hostData.transactions || [];
           
           const hostTransaction = {
-            type: "booking_pending",
+            type: "booking_earnings",
             amount: bookingAmount,
             bookingId: bookingId,
             date: new Date().toISOString(),
-            status: "pending", // Pending until withdrawal
-            description: `Pending payment for booking: ${booking.listingTitle || "Booking"}`,
-            withdrawalRequestId: null // Will be set when withdrawal is requested
+            status: "completed",
+            description: `Earnings from booking: ${booking.listingTitle || "Booking"}`,
+            paymentMethod: booking.paymentMethod || "paypal"
           };
           
           await updateDoc(hostRef, {
-            pendingBalance: currentPendingBalance + bookingAmount,
+            walletBalance: currentWalletBalance + bookingAmount,
             transactions: [hostTransaction, ...hostTransactions].slice(0, 10)
           });
         }
         
-        // Record payment to admin (money goes to admin's PayPal)
-        // Note: Actual PayPal transfer to admin would be handled by backend/webhook
-        // For now, we'll track it in a separate collection
+        // Record payment to admin for tracking purposes (PayPal payments go to admin's PayPal)
+        // Note: PayPal payments from guests go to admin's PayPal account
+        // Host receives money directly in their wallet when booking is accepted
         try {
           await addDoc(collection(db, "adminPayments"), {
             bookingId: bookingId,
             hostId: booking.hostId,
             guestId: booking.guestId,
             amount: bookingAmount,
-            status: "received", // Money received by admin
+            status: "received", // Money received by admin via PayPal (if PayPal payment)
             paymentMethod: booking.paymentMethod || "paypal",
             paypalOrderId: booking.paypalOrderId || null,
-            createdAt: serverTimestamp(),
-            withdrawalRequestId: null // Will be set when host requests withdrawal
+            hostWalletCredit: true, // Host has been credited in wallet
+            createdAt: serverTimestamp()
           });
         } catch (error) {
           console.error("Error recording admin payment:", error);
+        }
+
+        // Send system message to guest about acceptance
+        try {
+          const conversationId = bookingId;
+          const systemMessage = {
+            bookingId: bookingId,
+            conversationId: conversationId,
+            senderId: "system",
+            senderName: "System",
+            senderEmail: "system@voyago.com",
+            receiverId: booking.guestId,
+            receiverEmail: booking.guestEmail || "",
+            message: `Your booking for "${booking.listingTitle || "this listing"}" has been accepted! We're looking forward to hosting you.`,
+            isSystem: true,
+            systemType: "booking_accepted",
+            createdAt: serverTimestamp(),
+            read: false,
+          };
+          
+          await addDoc(collection(db, "messages"), systemMessage);
+        } catch (messageError) {
+          console.error("Error sending system message:", messageError);
+        }
+
+        // Send booking confirmation email to guest
+        console.log("📧 Starting to send booking confirmation email for booking:", bookingId);
+        try {
+          console.log("📧 Importing sendBookingConfirmationEmail...");
+          const { sendBookingConfirmationEmail } = await import("../../utils/bookingEmails");
+          console.log("📧 Email function imported successfully, calling with bookingId:", bookingId);
+          const emailResult = await sendBookingConfirmationEmail(bookingId);
+          console.log("📧 Email function returned:", emailResult);
+          if (!emailResult.success) {
+            console.error("❌ Failed to send booking confirmation email:", emailResult.error);
+          } else {
+            console.log("✅ Booking confirmation email sent successfully");
+          }
+        } catch (emailError) {
+          console.error("❌ Error sending booking confirmation email:", emailError);
+          console.error("❌ Error stack:", emailError.stack);
+          // Don't block booking confirmation if email fails
         }
 
         // Award points to host for accepting booking (same as guest gets for making booking)
@@ -2197,7 +2279,7 @@ const HostBookingsContent = () => {
       }
       
       await fetchBookings();
-      alert(`Booking ${actionText === "accept" ? "accepted" : actionText === "reject" ? "rejected" : newStatus} successfully! ${newStatus === "confirmed" ? `$${bookingAmount.toFixed(2)} has been added to your pending balance. Request withdrawal to receive funds.` : newStatus === "rejected" ? `$${bookingAmount.toFixed(2)} has been refunded to the guest.` : ""}`);
+      alert(`Booking ${actionText === "accept" ? "accepted" : actionText === "reject" ? "rejected" : newStatus} successfully! ${newStatus === "confirmed" ? `$${bookingAmount.toFixed(2)} has been added to your wallet balance.` : newStatus === "rejected" ? `$${bookingAmount.toFixed(2)} has been refunded to the guest.` : ""}`);
     } catch (error) {
       console.error("Error updating booking status:", error);
       alert("Failed to update booking status. Please try again.");
@@ -2834,6 +2916,16 @@ const HostMessagesContent = ({ navigate }) => {
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const typingTimeoutRef = useRef(null);
+  const isUserScrollingRef = useRef(false);
+  const previousMessageCountRef = useRef(0);
+
+  // Helper function to create a normalized conversationId (same for both users)
+  const getConversationId = (userId1, userId2) => {
+    if (!userId1 || !userId2) return null;
+    // Sort user IDs alphabetically to ensure both users get the same conversationId
+    const sortedIds = [userId1, userId2].sort();
+    return `${sortedIds[0]}_${sortedIds[1]}`;
+  };
 
   // Fetch conversations
   useEffect(() => {
@@ -3009,13 +3101,29 @@ const HostMessagesContent = ({ navigate }) => {
           unreadCount: data.unreadCount || 0
         }));
 
-        conversationsList.sort((a, b) => {
+        // Remove duplicates (keep the one with the most recent message)
+        const uniqueConversations = new Map();
+        conversationsList.forEach(conv => {
+          const existing = uniqueConversations.get(conv.otherUserId);
+          if (!existing) {
+            uniqueConversations.set(conv.otherUserId, conv);
+          } else {
+            const existingTime = existing.lastMessage?.createdAt || existing.bookings[0]?.createdAt || 0;
+            const newTime = conv.lastMessage?.createdAt || conv.bookings[0]?.createdAt || 0;
+            if (newTime > existingTime) {
+              uniqueConversations.set(conv.otherUserId, conv);
+            }
+          }
+        });
+
+        const deduplicatedList = Array.from(uniqueConversations.values());
+        deduplicatedList.sort((a, b) => {
           const dateA = a.lastMessage?.createdAt || a.bookings[0]?.createdAt || 0;
           const dateB = b.lastMessage?.createdAt || b.bookings[0]?.createdAt || 0;
           return new Date(dateB) - new Date(dateA);
         });
 
-        setConversations(conversationsList);
+        setConversations(deduplicatedList);
       } catch (error) {
         console.error("Error fetching conversations:", error);
       } finally {
@@ -3024,14 +3132,192 @@ const HostMessagesContent = ({ navigate }) => {
     };
 
     fetchConversations();
+    
+    // Set up real-time listener for conversations list updates
+    // Listen to all messages where host is involved to update conversations in real-time
+    if (currentUser) {
+      // Helper function to extract guestId from conversationId (handles normalized format)
+      const extractGuestId = (conversationId, msgSenderId, msgReceiverId) => {
+        if (!conversationId) {
+          // Fallback: use sender/receiver
+          return msgSenderId === currentUser.uid ? msgReceiverId : msgSenderId;
+        }
+        const parts = conversationId.split('_');
+        // Normalized format: sorted IDs, so both users will have same format
+        if (parts.length === 2) {
+          // Return the ID that's not the current user
+          return parts[0] === currentUser.uid ? parts[1] : parts[0];
+        }
+        // Fallback
+        return msgSenderId === currentUser.uid ? msgReceiverId : msgSenderId;
+      };
+      
+      // Helper function to update conversation in list
+      const updateConversationInList = (guestId, msgData, isNewMessage = false) => {
+        setConversations(prev => {
+          const existing = prev.find(c => c.otherUserId === guestId);
+          const msgTime = new Date(msgData.createdAt || 0).getTime();
+          const existingTime = existing?.lastMessage ? new Date(existing.lastMessage.createdAt || 0).getTime() : 0;
+          
+          // Only update if this is a newer message
+          if (existing && msgTime <= existingTime && !isNewMessage) {
+            return prev;
+          }
+          
+          // Calculate unread count
+          let newUnreadCount = existing?.unreadCount || 0;
+          if (isNewMessage && !msgData.read && msgData.receiverId === currentUser.uid) {
+            // New unread message received
+            newUnreadCount = (existing?.unreadCount || 0) + 1;
+          } else if (!isNewMessage && existing) {
+            // Keep existing unread count if not a new message
+            newUnreadCount = existing.unreadCount;
+          } else if (!existing) {
+            // New conversation
+            newUnreadCount = msgData.read ? 0 : 1;
+          }
+          
+          const updatedConv = {
+            otherUserId: guestId,
+            bookings: existing?.bookings || [],
+            userData: existing?.userData || null,
+            lastMessage: msgData,
+            unreadCount: newUnreadCount,
+            lastActivityTime: msgTime
+          };
+          
+          if (existing) {
+            // Update existing conversation
+            const updated = prev.map(c => 
+              c.otherUserId === guestId ? updatedConv : c
+            );
+            // Sort by last activity
+            updated.sort((a, b) => {
+              const dateA = a.lastMessage?.createdAt || a.bookings[0]?.createdAt || 0;
+              const dateB = b.lastMessage?.createdAt || b.bookings[0]?.createdAt || 0;
+              return new Date(dateB) - new Date(dateA);
+            });
+            return updated;
+          } else {
+            // New conversation - check if it already exists (to prevent duplicates)
+            const alreadyExists = prev.some(c => c.otherUserId === guestId);
+            if (alreadyExists) {
+              // Conversation was just added, update it instead
+              const updated = prev.map(c => 
+                c.otherUserId === guestId ? updatedConv : c
+              );
+              updated.sort((a, b) => {
+                const dateA = a.lastMessage?.createdAt || a.bookings[0]?.createdAt || 0;
+                const dateB = b.lastMessage?.createdAt || b.bookings[0]?.createdAt || 0;
+                return new Date(dateB) - new Date(dateA);
+              });
+              return updated;
+            }
+            
+            // Add placeholder conversation immediately to prevent duplicates
+            const placeholderConv = {
+              ...updatedConv,
+              userData: {
+                name: msgData.senderName || "Guest",
+                email: msgData.senderEmail || "",
+                role: "guest"
+              }
+            };
+            const withPlaceholder = [...prev, placeholderConv];
+            withPlaceholder.sort((a, b) => {
+              const dateA = a.lastMessage?.createdAt || a.bookings[0]?.createdAt || 0;
+              const dateB = b.lastMessage?.createdAt || b.bookings[0]?.createdAt || 0;
+              return new Date(dateB) - new Date(dateA);
+            });
+            
+            // Fetch user data and update
+            getDoc(doc(db, "users", guestId)).then(userDoc => {
+              setConversations(prev => {
+                // Check if conversation still exists (might have been removed)
+                const existing = prev.find(c => c.otherUserId === guestId);
+                if (!existing) return prev;
+                
+                const updated = prev.map(c => {
+                  if (c.otherUserId === guestId) {
+                    return {
+                      ...c,
+                      userData: userDoc.exists() 
+                        ? { id: userDoc.id, ...userDoc.data() }
+                        : c.userData
+                    };
+                  }
+                  return c;
+                });
+                return updated;
+              });
+            }).catch(() => {
+              // Keep placeholder data on error
+            });
+            
+            return withPlaceholder;
+          }
+        });
+      };
+      
+      // Listen to received messages (new messages from guests) - with fallback
+      const receivedMessagesListener = query(
+        collection(db, "messages"),
+        where("receiverId", "==", currentUser.uid)
+      );
+      
+      const unsubscribeReceived = onSnapshot(receivedMessagesListener, (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          if (change.type === 'added' || change.type === 'modified') {
+            const msgData = { id: change.doc.id, ...change.doc.data() };
+            const guestId = extractGuestId(msgData.conversationId, msgData.senderId, msgData.receiverId);
+            
+            if (guestId && guestId !== currentUser.uid) {
+              updateConversationInList(guestId, msgData, change.type === 'added');
+            }
+          }
+        });
+      }, (error) => {
+        console.error("Error listening to received messages for conversations:", error);
+      });
+      
+      // Also listen to sent messages to update lastMessage
+      const sentMessagesListener = query(
+        collection(db, "messages"),
+        where("senderId", "==", currentUser.uid)
+      );
+      
+      const unsubscribeSent = onSnapshot(sentMessagesListener, (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          if (change.type === 'added' || change.type === 'modified') {
+            const msgData = { id: change.doc.id, ...change.doc.data() };
+            const guestId = extractGuestId(msgData.conversationId, msgData.senderId, msgData.receiverId);
+            
+            if (guestId && guestId !== currentUser.uid) {
+              updateConversationInList(guestId, msgData, false);
+            }
+          }
+        });
+      }, (error) => {
+        console.error("Error listening to sent messages for conversations:", error);
+      });
+      
+      return () => {
+        unsubscribeReceived();
+        unsubscribeSent();
+      };
+    }
   }, [currentUser, userRole]);
 
   // Fetch messages when conversation is selected
   useEffect(() => {
     if (!selectedOtherUserId || !currentUser) {
       setMessages([]);
+      previousMessageCountRef.current = 0;
       return;
     }
+
+    // Reset message count when switching conversations
+    previousMessageCountRef.current = 0;
 
     // Fetch other user data
     getDoc(doc(db, "users", selectedOtherUserId)).then(userDoc => {
@@ -3068,25 +3354,45 @@ const HostMessagesContent = ({ navigate }) => {
     };
 
     const updateMessages = async () => {
-      const messagesArray = Array.from(allMessages.values());
+      // Create a completely new array to ensure React detects the change
+      const messagesArray = Array.from(allMessages.values()).map(msg => ({ ...msg }));
       messagesArray.sort((a, b) => {
         const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
         const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
         return dateA - dateB;
       });
+      
+      const isNewMessage = messagesArray.length > previousMessageCountRef.current;
+      previousMessageCountRef.current = messagesArray.length;
+      
+      // Force state update with new array reference
       setMessages(messagesArray);
       
-      // Mark messages as read
+      // Mark messages as read (async, don't block)
       markMessagesAsRead(messagesArray);
       
-      setTimeout(() => {
-        if (messagesEndRef.current) {
-          messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
-        }
-      }, 100);
+      if (isNewMessage) {
+        setTimeout(() => {
+          const container = messagesContainerRef.current;
+          if (!container || !messagesEndRef.current) return;
+          
+          const { scrollTop, scrollHeight, clientHeight } = container;
+          const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+          const isAtBottom = distanceFromBottom < 150;
+          
+          if (isAtBottom && !isUserScrollingRef.current) {
+            messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+          }
+        }, 100);
+      }
     };
 
     // Listen to messages - handle both bookingId and conversationId
+    // Use normalized conversationId so both users use the same format
+    const conversationId = getConversationId(currentUser.uid, selectedOtherUserId);
+    if (!conversationId) return;
+    
+    // Also check the old format for backward compatibility (in case old messages exist)
     const conversationId1 = `${currentUser.uid}_${selectedOtherUserId}`;
     const conversationId2 = `${selectedOtherUserId}_${currentUser.uid}`;
 
@@ -3102,11 +3408,16 @@ const HostMessagesContent = ({ navigate }) => {
         );
 
         const unsubscribeSent = onSnapshot(sentQuery, (snapshot) => {
+          let hasChanges = false;
           snapshot.docChanges().forEach((change) => {
             if (change.type === 'added' || change.type === 'modified') {
               allMessages.set(change.doc.id, { id: change.doc.id, ...change.doc.data() });
+              hasChanges = true;
             } else if (change.type === 'removed') {
-              allMessages.delete(change.doc.id);
+              if (allMessages.has(change.doc.id)) {
+                allMessages.delete(change.doc.id);
+                hasChanges = true;
+              }
             }
           });
           
@@ -3114,10 +3425,13 @@ const HostMessagesContent = ({ navigate }) => {
           snapshot.forEach((doc) => {
             if (!allMessages.has(doc.id)) {
               allMessages.set(doc.id, { id: doc.id, ...doc.data() });
+              hasChanges = true;
             }
           });
           
-          updateMessages();
+          if (hasChanges || snapshot.docChanges().length > 0) {
+            updateMessages();
+          }
         }, (error) => {
           console.error("Error listening to sent messages:", error);
         });
@@ -3131,11 +3445,16 @@ const HostMessagesContent = ({ navigate }) => {
         );
 
         const unsubscribeReceived = onSnapshot(receivedQuery, (snapshot) => {
+          let hasChanges = false;
           snapshot.docChanges().forEach((change) => {
             if (change.type === 'added' || change.type === 'modified') {
               allMessages.set(change.doc.id, { id: change.doc.id, ...change.doc.data() });
+              hasChanges = true;
             } else if (change.type === 'removed') {
-              allMessages.delete(change.doc.id);
+              if (allMessages.has(change.doc.id)) {
+                allMessages.delete(change.doc.id);
+                hasChanges = true;
+              }
             }
           });
           
@@ -3143,12 +3462,35 @@ const HostMessagesContent = ({ navigate }) => {
           snapshot.forEach((doc) => {
             if (!allMessages.has(doc.id)) {
               allMessages.set(doc.id, { id: doc.id, ...doc.data() });
+              hasChanges = true;
             }
           });
           
-          updateMessages();
+          if (hasChanges || snapshot.docChanges().length > 0) {
+            updateMessages();
+          }
         }, (error) => {
           console.error("Error listening to received messages:", error);
+          // If query fails due to missing index, set up fallback query
+          if (error.code === 'failed-precondition') {
+            const fallbackQuery = query(
+              collection(db, "messages"),
+              where("bookingId", "==", bookingId),
+              where("receiverId", "==", currentUser.uid)
+            );
+            
+            const unsubscribeFallback = onSnapshot(fallbackQuery, (snapshot) => {
+              snapshot.forEach((doc) => {
+                const msgData = { id: doc.id, ...doc.data() };
+                if (!allMessages.has(doc.id)) {
+                  allMessages.set(doc.id, msgData);
+                }
+              });
+              updateMessages();
+            });
+            
+            unsubscribeFunctions.push(unsubscribeFallback);
+          }
         });
 
         unsubscribeFunctions.push(unsubscribeSent, unsubscribeReceived);
@@ -3213,7 +3555,20 @@ const HostMessagesContent = ({ navigate }) => {
       });
 
       // Also listen to messages by conversationId (in case some messages don't have bookingId)
-      // Split into sent and received for security rules
+      // PRIMARY: Use normalized conversationId (matches guest side)
+      const allMessagesQuery = query(
+        collection(db, "messages"),
+        where("conversationId", "==", conversationId),
+        orderBy("createdAt", "asc")
+      );
+      
+      // Fallback query without orderBy (works without index)
+      const allMessagesQueryFallback = query(
+        collection(db, "messages"),
+        where("conversationId", "==", conversationId)
+      );
+      
+      // OLD FORMAT: Also listen to old format for backward compatibility
       const sentQuery1 = query(
         collection(db, "messages"),
         where("conversationId", "==", conversationId1),
@@ -3241,23 +3596,105 @@ const HostMessagesContent = ({ navigate }) => {
         where("receiverId", "==", currentUser.uid),
         orderBy("createdAt", "asc")
       );
+      
+      // Helper function to process snapshot
+      const processSnapshot = (snapshot, source = "primary") => {
+        let hasChanges = false;
+        
+        // Use docChanges for incremental updates
+        snapshot.docChanges().forEach((change) => {
+          const msgData = { id: change.doc.id, ...change.doc.data() };
+          // Only include messages where current user is involved
+          if (msgData.senderId === currentUser.uid || msgData.receiverId === currentUser.uid) {
+            if (change.type === 'removed') {
+              if (allMessages.has(change.doc.id)) {
+                allMessages.delete(change.doc.id);
+                hasChanges = true;
+              }
+            } else {
+              // Added or modified
+              const wasNew = !allMessages.has(change.doc.id);
+              allMessages.set(change.doc.id, msgData);
+              hasChanges = true;
+              
+              if (wasNew && msgData.receiverId === currentUser.uid) {
+                console.log(`New message received (${source}):`, msgData.message, "from", msgData.senderId);
+              }
+            }
+          }
+        });
+        
+        // Also ensure all existing docs in snapshot are in the map (for initial load)
+        if (snapshot.docChanges().length === 0 && snapshot.size > 0) {
+          snapshot.forEach((doc) => {
+            const msgData = { id: doc.id, ...doc.data() };
+            if (msgData.senderId === currentUser.uid || msgData.receiverId === currentUser.uid) {
+              if (!allMessages.has(doc.id)) {
+                allMessages.set(doc.id, msgData);
+                hasChanges = true;
+              }
+            }
+          });
+        }
+        
+        if (hasChanges || snapshot.docChanges().length > 0) {
+          updateMessages();
+        }
+      };
+      
+      // PRIMARY: Listen to all messages in conversation (normalized format)
+      const unsubscribeAll = onSnapshot(
+        allMessagesQuery,
+        (snapshot) => {
+          console.log("Host snapshot received - size:", snapshot.size, "docChanges:", snapshot.docChanges().length, "conversationId:", conversationId);
+          processSnapshot(snapshot, "primary");
+        },
+        (error) => {
+          console.error("Error listening to all messages (primary query):", error);
+          if (error.code === 'failed-precondition') {
+            console.warn("Firestore index is building. Fallback query should handle messages.");
+          }
+        }
+      );
+      
+      // FALLBACK: Set up fallback query (without orderBy) that works even if index is missing
+      const unsubscribeFallback = onSnapshot(
+        allMessagesQueryFallback,
+        (snapshot) => {
+          if (snapshot.size > 0) {
+            console.log("Host fallback snapshot received - size:", snapshot.size, "docChanges:", snapshot.docChanges().length);
+            processSnapshot(snapshot, "fallback");
+          }
+        },
+        (error) => {
+          console.error("Fallback query also failed:", error);
+        }
+      );
 
       const unsubscribeSent1 = onSnapshot(sentQuery1, (snapshot) => {
+        let hasChanges = false;
         snapshot.docChanges().forEach((change) => {
           if (change.type === 'added' || change.type === 'modified') {
             allMessages.set(change.doc.id, { id: change.doc.id, ...change.doc.data() });
+            hasChanges = true;
           } else if (change.type === 'removed') {
-            allMessages.delete(change.doc.id);
+            if (allMessages.has(change.doc.id)) {
+              allMessages.delete(change.doc.id);
+              hasChanges = true;
+            }
           }
         });
         
         snapshot.forEach((doc) => {
           if (!allMessages.has(doc.id)) {
             allMessages.set(doc.id, { id: doc.id, ...doc.data() });
+            hasChanges = true;
           }
         });
         
-        updateMessages();
+        if (hasChanges || snapshot.docChanges().length > 0) {
+          updateMessages();
+        }
       }, (error) => {
         console.error("Error listening to sent messages by conversationId 1:", error);
       });
@@ -3280,24 +3717,52 @@ const HostMessagesContent = ({ navigate }) => {
         updateMessages();
       }, (error) => {
         console.error("Error listening to received messages by conversationId 1:", error);
+        // Add fallback query if index is missing
+        if (error.code === 'failed-precondition') {
+          const fallbackQuery = query(
+            collection(db, "messages"),
+            where("conversationId", "==", conversationId1),
+            where("receiverId", "==", currentUser.uid)
+          );
+          
+          const unsubscribeFallback = onSnapshot(fallbackQuery, (snapshot) => {
+            snapshot.forEach((doc) => {
+              const msgData = { id: doc.id, ...doc.data() };
+              if (!allMessages.has(doc.id)) {
+                allMessages.set(doc.id, msgData);
+              }
+            });
+            updateMessages();
+          });
+          
+          unsubscribeFunctions.push(unsubscribeFallback);
+        }
       });
 
       const unsubscribeSent2 = onSnapshot(sentQuery2, (snapshot) => {
+        let hasChanges = false;
         snapshot.docChanges().forEach((change) => {
           if (change.type === 'added' || change.type === 'modified') {
             allMessages.set(change.doc.id, { id: change.doc.id, ...change.doc.data() });
+            hasChanges = true;
           } else if (change.type === 'removed') {
-            allMessages.delete(change.doc.id);
+            if (allMessages.has(change.doc.id)) {
+              allMessages.delete(change.doc.id);
+              hasChanges = true;
+            }
           }
         });
         
         snapshot.forEach((doc) => {
           if (!allMessages.has(doc.id)) {
             allMessages.set(doc.id, { id: doc.id, ...doc.data() });
+            hasChanges = true;
           }
         });
         
-        updateMessages();
+        if (hasChanges || snapshot.docChanges().length > 0) {
+          updateMessages();
+        }
       }, (error) => {
         console.error("Error listening to sent messages by conversationId 2:", error);
       });
@@ -3320,11 +3785,45 @@ const HostMessagesContent = ({ navigate }) => {
         updateMessages();
       }, (error) => {
         console.error("Error listening to received messages by conversationId 2:", error);
+        // Add fallback query if index is missing
+        if (error.code === 'failed-precondition') {
+          const fallbackQuery = query(
+            collection(db, "messages"),
+            where("conversationId", "==", conversationId2),
+            where("receiverId", "==", currentUser.uid)
+          );
+          
+          const unsubscribeFallback = onSnapshot(fallbackQuery, (snapshot) => {
+            snapshot.forEach((doc) => {
+              const msgData = { id: doc.id, ...doc.data() };
+              if (!allMessages.has(doc.id)) {
+                allMessages.set(doc.id, msgData);
+              }
+            });
+            updateMessages();
+          });
+          
+          unsubscribeFunctions.push(unsubscribeFallback);
+        }
       });
 
-      unsubscribeFunctions.push(unsubscribeSent1, unsubscribeReceived1, unsubscribeSent2, unsubscribeReceived2);
+      unsubscribeFunctions.push(unsubscribeAll, unsubscribeFallback, unsubscribeSent1, unsubscribeReceived1, unsubscribeSent2, unsubscribeReceived2);
     } else {
-      // If no bookings, listen to messages by conversationId only (split into sent and received)
+      // If no bookings, listen to messages by conversationId only
+      // PRIMARY: Use normalized conversationId (matches guest side)
+      const allMessagesQueryNoBooking = query(
+        collection(db, "messages"),
+        where("conversationId", "==", conversationId),
+        orderBy("createdAt", "asc")
+      );
+      
+      // Fallback query without orderBy (works without index)
+      const allMessagesQueryNoBookingFallback = query(
+        collection(db, "messages"),
+        where("conversationId", "==", conversationId)
+      );
+      
+      // OLD FORMAT: Also listen to old format for backward compatibility
       const sentQuery1 = query(
         collection(db, "messages"),
         where("conversationId", "==", conversationId1),
@@ -3352,23 +3851,105 @@ const HostMessagesContent = ({ navigate }) => {
         where("receiverId", "==", currentUser.uid),
         orderBy("createdAt", "asc")
       );
+      
+      // Helper function to process snapshot (reuse the one from above or create new)
+      const processSnapshotNoBooking = (snapshot, source = "primary") => {
+        let hasChanges = false;
+        
+        // Use docChanges for incremental updates
+        snapshot.docChanges().forEach((change) => {
+          const msgData = { id: change.doc.id, ...change.doc.data() };
+          // Only include messages where current user is involved
+          if (msgData.senderId === currentUser.uid || msgData.receiverId === currentUser.uid) {
+            if (change.type === 'removed') {
+              if (allMessages.has(change.doc.id)) {
+                allMessages.delete(change.doc.id);
+                hasChanges = true;
+              }
+            } else {
+              // Added or modified
+              const wasNew = !allMessages.has(change.doc.id);
+              allMessages.set(change.doc.id, msgData);
+              hasChanges = true;
+              
+              if (wasNew && msgData.receiverId === currentUser.uid) {
+                console.log(`New message received (no booking, ${source}):`, msgData.message, "from", msgData.senderId);
+              }
+            }
+          }
+        });
+        
+        // Also ensure all existing docs in snapshot are in the map (for initial load)
+        if (snapshot.docChanges().length === 0 && snapshot.size > 0) {
+          snapshot.forEach((doc) => {
+            const msgData = { id: doc.id, ...doc.data() };
+            if (msgData.senderId === currentUser.uid || msgData.receiverId === currentUser.uid) {
+              if (!allMessages.has(doc.id)) {
+                allMessages.set(doc.id, msgData);
+                hasChanges = true;
+              }
+            }
+          });
+        }
+        
+        if (hasChanges || snapshot.docChanges().length > 0) {
+          updateMessages();
+        }
+      };
+      
+      // PRIMARY: Listen to all messages in conversation (normalized format)
+      const unsubscribeAllNoBooking = onSnapshot(
+        allMessagesQueryNoBooking,
+        (snapshot) => {
+          console.log("Host snapshot (no booking) - size:", snapshot.size, "docChanges:", snapshot.docChanges().length, "conversationId:", conversationId);
+          processSnapshotNoBooking(snapshot, "primary");
+        },
+        (error) => {
+          console.error("Error listening to all messages (no booking, primary query):", error);
+          if (error.code === 'failed-precondition') {
+            console.warn("Firestore index is building. Fallback query should handle messages.");
+          }
+        }
+      );
+      
+      // FALLBACK: Set up fallback query (without orderBy) that works even if index is missing
+      const unsubscribeFallbackNoBooking = onSnapshot(
+        allMessagesQueryNoBookingFallback,
+        (snapshot) => {
+          if (snapshot.size > 0) {
+            console.log("Host fallback snapshot (no booking) - size:", snapshot.size, "docChanges:", snapshot.docChanges().length);
+            processSnapshotNoBooking(snapshot, "fallback");
+          }
+        },
+        (error) => {
+          console.error("Fallback query (no booking) also failed:", error);
+        }
+      );
 
       const unsubscribeSent1 = onSnapshot(sentQuery1, (snapshot) => {
+        let hasChanges = false;
         snapshot.docChanges().forEach((change) => {
           if (change.type === 'added' || change.type === 'modified') {
             allMessages.set(change.doc.id, { id: change.doc.id, ...change.doc.data() });
+            hasChanges = true;
           } else if (change.type === 'removed') {
-            allMessages.delete(change.doc.id);
+            if (allMessages.has(change.doc.id)) {
+              allMessages.delete(change.doc.id);
+              hasChanges = true;
+            }
           }
         });
         
         snapshot.forEach((doc) => {
           if (!allMessages.has(doc.id)) {
             allMessages.set(doc.id, { id: doc.id, ...doc.data() });
+            hasChanges = true;
           }
         });
         
-        updateMessages();
+        if (hasChanges || snapshot.docChanges().length > 0) {
+          updateMessages();
+        }
       }, (error) => {
         console.error("Error listening to sent messages by conversationId 1:", error);
       });
@@ -3391,24 +3972,52 @@ const HostMessagesContent = ({ navigate }) => {
         updateMessages();
       }, (error) => {
         console.error("Error listening to received messages by conversationId 1:", error);
+        // Add fallback query if index is missing
+        if (error.code === 'failed-precondition') {
+          const fallbackQuery = query(
+            collection(db, "messages"),
+            where("conversationId", "==", conversationId1),
+            where("receiverId", "==", currentUser.uid)
+          );
+          
+          const unsubscribeFallback = onSnapshot(fallbackQuery, (snapshot) => {
+            snapshot.forEach((doc) => {
+              const msgData = { id: doc.id, ...doc.data() };
+              if (!allMessages.has(doc.id)) {
+                allMessages.set(doc.id, msgData);
+              }
+            });
+            updateMessages();
+          });
+          
+          unsubscribeFunctions.push(unsubscribeFallback);
+        }
       });
 
       const unsubscribeSent2 = onSnapshot(sentQuery2, (snapshot) => {
+        let hasChanges = false;
         snapshot.docChanges().forEach((change) => {
           if (change.type === 'added' || change.type === 'modified') {
             allMessages.set(change.doc.id, { id: change.doc.id, ...change.doc.data() });
+            hasChanges = true;
           } else if (change.type === 'removed') {
-            allMessages.delete(change.doc.id);
+            if (allMessages.has(change.doc.id)) {
+              allMessages.delete(change.doc.id);
+              hasChanges = true;
+            }
           }
         });
         
         snapshot.forEach((doc) => {
           if (!allMessages.has(doc.id)) {
             allMessages.set(doc.id, { id: doc.id, ...doc.data() });
+            hasChanges = true;
           }
         });
         
-        updateMessages();
+        if (hasChanges || snapshot.docChanges().length > 0) {
+          updateMessages();
+        }
       }, (error) => {
         console.error("Error listening to sent messages by conversationId 2:", error);
       });
@@ -3431,9 +4040,29 @@ const HostMessagesContent = ({ navigate }) => {
         updateMessages();
       }, (error) => {
         console.error("Error listening to received messages by conversationId 2:", error);
+        // Add fallback query if index is missing
+        if (error.code === 'failed-precondition') {
+          const fallbackQuery = query(
+            collection(db, "messages"),
+            where("conversationId", "==", conversationId2),
+            where("receiverId", "==", currentUser.uid)
+          );
+          
+          const unsubscribeFallback = onSnapshot(fallbackQuery, (snapshot) => {
+            snapshot.forEach((doc) => {
+              const msgData = { id: doc.id, ...doc.data() };
+              if (!allMessages.has(doc.id)) {
+                allMessages.set(doc.id, msgData);
+              }
+            });
+            updateMessages();
+          });
+          
+          unsubscribeFunctions.push(unsubscribeFallback);
+        }
       });
 
-      unsubscribeFunctions.push(unsubscribeSent1, unsubscribeReceived1, unsubscribeSent2, unsubscribeReceived2);
+      unsubscribeFunctions.push(unsubscribeAllNoBooking, unsubscribeFallbackNoBooking, unsubscribeSent1, unsubscribeReceived1, unsubscribeSent2, unsubscribeReceived2);
     }
 
     return () => {
@@ -3651,11 +4280,11 @@ const HostMessagesContent = ({ navigate }) => {
   });
 
   return (
-    <div className="h-full flex flex-col animate-fadeInUp">
+    <div className="flex flex-col animate-fadeInUp h-full overflow-hidden">
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex-1 flex overflow-hidden min-h-0">
         {/* Conversations List */}
-        <div className="w-full sm:w-80 lg:w-96 border-r border-gray-200 flex flex-col flex-shrink-0">
-          <div className="p-4 sm:p-6 border-b border-gray-200">
+        <div className="w-full sm:w-80 lg:w-96 border-r border-gray-200 flex flex-col flex-shrink-0 min-h-0">
+          <div className="p-4 sm:p-6 border-b border-gray-200 flex-shrink-0">
             <h2 className="text-xl sm:text-2xl font-light text-[#1C1C1E] mb-4">Messages</h2>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -3673,7 +4302,7 @@ const HostMessagesContent = ({ navigate }) => {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
             {loading ? (
               <div className="p-6 text-center">
                 <div className="text-[#8E8E93] font-light">Loading conversations...</div>
@@ -3709,9 +4338,30 @@ const HostMessagesContent = ({ navigate }) => {
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-full bg-[#0071E3]/10 flex items-center justify-center flex-shrink-0">
-                          <span className="text-sm font-medium text-[#0071E3]">{initials}</span>
-                        </div>
+                        {(() => {
+                          const userPhoto = userData.profilePhotoUrl || userData.photoURL || null;
+                          return (
+                            <>
+                              {userPhoto ? (
+                                <img 
+                                  src={userPhoto} 
+                                  alt={fullName}
+                                  className="w-12 h-12 rounded-full object-cover flex-shrink-0"
+                                  onError={(e) => {
+                                    e.target.style.display = 'none';
+                                    e.target.nextSibling.style.display = 'flex';
+                                  }}
+                                />
+                              ) : null}
+                              <div 
+                                className="w-12 h-12 rounded-full bg-[#0071E3]/10 flex items-center justify-center flex-shrink-0"
+                                style={{ display: userPhoto ? 'none' : 'flex' }}
+                              >
+                                <span className="text-sm font-medium text-[#0071E3]">{initials}</span>
+                              </div>
+                            </>
+                          );
+                        })()}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between mb-1">
                             <p className="text-sm font-medium text-[#1C1C1E] truncate">{fullName}</p>
@@ -3738,22 +4388,47 @@ const HostMessagesContent = ({ navigate }) => {
 
         {/* Messages Area */}
         {selectedOtherUserId ? (
-          <div className="flex-1 flex flex-col min-w-0">
-            <div className="p-4 sm:p-6 border-b border-gray-200 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-[#0071E3]/10 flex items-center justify-center">
-                  <span className="text-sm font-medium text-[#0071E3]">{getOtherPartyInitials()}</span>
-                </div>
-                <div>
-                  <h3 className="text-base font-medium text-[#1C1C1E]">{getOtherPartyName()}</h3>
-                  <p className="text-xs text-[#8E8E93]">Guest</p>
+          <div className="flex-1 flex min-w-0 min-h-0">
+            {/* Main Chat Area */}
+            <div className="flex-1 flex flex-col min-w-0 min-h-0">
+              <div className="p-4 sm:p-6 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
+                <div className="flex items-center gap-3">
+                  {(() => {
+                    const otherUserPhoto = otherUserData?.profilePhotoUrl || otherUserData?.photoURL || null;
+                    const otherUserInitials = getOtherPartyInitials();
+                    return (
+                      <>
+                        {otherUserPhoto ? (
+                          <img 
+                            src={otherUserPhoto} 
+                            alt={getOtherPartyName()}
+                            className="w-10 h-10 rounded-full object-cover flex-shrink-0"
+                            onError={(e) => {
+                              e.target.style.display = 'none';
+                              e.target.nextSibling.style.display = 'flex';
+                            }}
+                          />
+                        ) : null}
+                        <div 
+                          className="w-10 h-10 rounded-full bg-[#0071E3]/10 flex items-center justify-center flex-shrink-0"
+                          style={{ display: otherUserPhoto ? 'none' : 'flex' }}
+                        >
+                          <span className="text-sm font-medium text-[#0071E3]">{otherUserInitials}</span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                  <div>
+                    <h3 className="text-base font-medium text-[#1C1C1E]">{getOtherPartyName()}</h3>
+                    <p className="text-xs text-[#8E8E93]">Guest</p>
+                  </div>
                 </div>
               </div>
-            </div>
 
             <div
               ref={messagesContainerRef}
-              className="flex-1 overflow-y-auto bg-[#F5F5F7] px-4 sm:px-6 py-6 sm:py-8"
+              className="flex-1 min-h-0 overflow-y-auto bg-[#F5F5F7] px-4 sm:px-6 py-6 sm:py-8"
+              style={{ overflowY: 'auto', height: '100%', minHeight: 0 }}
             >
               {messages.length === 0 ? (
                 <div className="h-full flex items-center justify-center">
@@ -3823,12 +4498,44 @@ const HostMessagesContent = ({ navigate }) => {
                       );
                     }
                     
+                    // Regular message rendering
+                    const prevMessage = index > 0 ? messages[index - 1] : null;
+                    const isSameSender = prevMessage && prevMessage.senderId === message.senderId;
+                    const otherUserPhoto = otherUserData?.profilePhotoUrl || otherUserData?.photoURL || null;
+                    const otherUserInitials = getOtherPartyInitials();
+                    
                     return (
                       <div
                         key={message.id}
-                        className={`flex ${isOwnMessage ? "justify-end" : "justify-start"} mb-3 animate-fadeInUp`}
+                        className={`flex ${isOwnMessage ? "justify-end" : "justify-start"} mb-3 animate-fadeInUp gap-2`}
                         style={{ animationDelay: `${index * 0.05}s` }}
                       >
+                        {/* Profile Picture for other user's messages */}
+                        {!isOwnMessage && !isSameSender && (
+                          <div className="flex-shrink-0">
+                            {otherUserPhoto ? (
+                              <img 
+                                src={otherUserPhoto} 
+                                alt={getOtherPartyName()}
+                                className="w-8 h-8 rounded-full object-cover"
+                                onError={(e) => {
+                                  e.target.style.display = 'none';
+                                  e.target.nextSibling.style.display = 'flex';
+                                }}
+                              />
+                            ) : null}
+                            <div 
+                              className="w-8 h-8 rounded-full bg-[#0071E3] flex items-center justify-center text-white text-xs font-semibold"
+                              style={{ display: otherUserPhoto ? 'none' : 'flex' }}
+                            >
+                              {otherUserInitials}
+                            </div>
+                          </div>
+                        )}
+                        {/* Spacer for same sender messages */}
+                        {!isOwnMessage && isSameSender && (
+                          <div className="w-8 flex-shrink-0"></div>
+                        )}
                         <div className={`max-w-[75%] sm:max-w-[65%] ${isOwnMessage ? "items-end" : "items-start"} flex flex-col`}>
                           <div
                             className={`px-5 py-4 rounded-2xl ${
@@ -3898,7 +4605,7 @@ const HostMessagesContent = ({ navigate }) => {
               )}
             </div>
 
-            <form onSubmit={handleSendMessage} className="border-t border-gray-200 bg-white p-4 sm:p-6">
+            <form onSubmit={handleSendMessage} className="border-t border-gray-200 bg-white p-4 sm:p-6 flex-shrink-0">
               <div className="flex gap-3 items-end">
                 <div className="flex-1 bg-[#F2F2F7] rounded-2xl px-4 py-3 border border-transparent focus-within:border-[#0071E3]/30 focus-within:bg-white transition-colors min-h-[44px] flex items-center">
                   <input
@@ -3934,6 +4641,92 @@ const HostMessagesContent = ({ navigate }) => {
                 </button>
               </div>
             </form>
+            </div>
+
+            {/* Right Sidebar - Profile (Desktop) */}
+            {selectedOtherUserId && otherUserData && (
+              <div className="hidden lg:flex w-80 bg-white border-l border-gray-200 flex-col flex-shrink-0">
+                <div className="p-6 flex-1 overflow-y-auto">
+                  <h3 className="text-lg font-semibold text-[#1C1C1E] mb-6">Profile</h3>
+                  
+                  {/* Profile Info */}
+                  <div className="text-center mb-6">
+                    {(() => {
+                      const otherUserPhoto = otherUserData?.profilePhotoUrl || otherUserData?.photoURL || null;
+                      const otherUserInitials = getOtherPartyInitials();
+                      return (
+                        <>
+                          {otherUserPhoto ? (
+                            <img 
+                              src={otherUserPhoto} 
+                              alt={getOtherPartyName()}
+                              className="w-20 h-20 mx-auto mb-4 rounded-full object-cover"
+                              onError={(e) => {
+                                e.target.style.display = 'none';
+                                e.target.nextSibling.style.display = 'flex';
+                              }}
+                            />
+                          ) : null}
+                          <div 
+                            className="w-20 h-20 mx-auto mb-4 rounded-full bg-[#0071E3] flex items-center justify-center text-white font-semibold text-xl"
+                            style={{ display: otherUserPhoto ? 'none' : 'flex' }}
+                          >
+                            {otherUserInitials}
+                          </div>
+                        </>
+                      );
+                    })()}
+                    <h4 className="text-lg font-semibold text-[#1C1C1E] mb-2">
+                      {getOtherPartyName()}
+                    </h4>
+                    {otherUserData.firstName && otherUserData.lastName && (
+                      <p className="text-sm text-[#8E8E93] font-light mb-4">
+                        {otherUserData.firstName} {otherUserData.lastName}
+                      </p>
+                    )}
+                    <div className="flex items-center justify-center gap-2 mb-4">
+                      <span className="px-3 py-1 bg-[#0071E3]/10 text-[#0071E3] rounded-lg text-xs font-medium">
+                        {otherUserData.role === "host" ? "Host" : "Guest"}
+                      </span>
+                      {otherUserData.role === "host" && (
+                        <span className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-lg text-xs font-medium flex items-center gap-1">
+                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                          </svg>
+                          Prime Host
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Contact Info */}
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-xs font-medium text-[#8E8E93] mb-1 block">Email</label>
+                      <p className="text-sm text-[#1C1C1E] font-light">
+                        {otherUserData.email || "Not provided"}
+                      </p>
+                    </div>
+                    {otherUserData.phone && (
+                      <div>
+                        <label className="text-xs font-medium text-[#8E8E93] mb-1 block">Phone</label>
+                        <p className="text-sm text-[#1C1C1E] font-light">
+                          {otherUserData.phone}
+                        </p>
+                      </div>
+                    )}
+                    {otherUserData.bio && (
+                      <div>
+                        <label className="text-xs font-medium text-[#8E8E93] mb-1 block">Bio</label>
+                        <p className="text-sm text-[#1C1C1E] font-light">
+                          {otherUserData.bio}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="flex-1 flex items-center justify-center bg-[#F5F5F7]">
