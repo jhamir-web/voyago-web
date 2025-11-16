@@ -83,14 +83,49 @@ export default async function handler(req, res) {
     });
 
     // Execute PayPal Payout
-    const response = await client.execute(request);
+    console.log('Executing PayPal payout request...');
+    console.log('PayPal Client ID:', PAYPAL_CLIENT_ID ? 'Set' : 'Missing');
+    console.log('PayPal Secret:', PAYPAL_SECRET ? 'Set' : 'Missing');
+    console.log('PayPal Mode:', PAYPAL_MODE);
+    console.log('Recipient Email:', recipientEmail);
+    console.log('Amount:', amount);
+    
+    let response;
+    try {
+      response = await client.execute(request);
+      console.log('PayPal response status:', response.statusCode);
+      console.log('PayPal response:', JSON.stringify(response.result, null, 2));
+    } catch (paypalError) {
+      console.error('PayPal API Error:', paypalError);
+      console.error('PayPal Error Details:', JSON.stringify(paypalError, null, 2));
+      throw paypalError;
+    }
+
     const result = response.result;
+
+    // Check if payout was successful
+    if (!result || !result.batch_header) {
+      console.error('Invalid PayPal response:', result);
+      return res.status(500).json({
+        error: 'PayPal payout failed: Invalid response from PayPal',
+        details: 'No batch header in response',
+        response: result
+      });
+    }
+
+    const batchId = result.batch_header?.payout_batch_id;
+    const batchStatus = result.batch_header?.batch_status;
+
+    console.log('PayPal Payout Success!');
+    console.log('Batch ID:', batchId);
+    console.log('Batch Status:', batchStatus);
 
     return res.status(200).json({
       success: true,
-      payoutBatchId: result.batch_header?.payout_batch_id,
-      batchStatus: result.batch_header?.batch_status,
+      payoutBatchId: batchId,
+      batchStatus: batchStatus,
       message: `Payout of ${amount} ${currency} initiated successfully`,
+      result: result
     });
   } catch (error) {
     console.error('PayPal Payout Error:', error);

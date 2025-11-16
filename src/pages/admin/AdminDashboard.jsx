@@ -3,7 +3,8 @@ import { createPortal } from "react-dom";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { collection, query, getDocs, onSnapshot, where, doc, getDoc, updateDoc, addDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "../../firebase";
+import { db, processPayPalPayout } from "../../firebase";
+import { auth } from "../../firebase";
 import jsPDF from "jspdf";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
@@ -1391,37 +1392,19 @@ const WithdrawalsContent = () => {
         adminNotes: notes || null
       };
 
-      // IMPORTANT: When withdrawal is completed, admin has manually sent PayPal transfer
-      // We do NOT add to walletBalance - all balances are virtual/preview only
-      // The real money transfer happens via PayPal from admin to host (outside this system)
+      // IMPORTANT: When withdrawal is completed, automatically transfer money via PayPal Payouts API
       if (newStatus === "completed") {
-        const hostRef = doc(db, "users", withdrawal.hostId);
-        const hostDoc = await getDoc(hostRef);
-        
-        if (hostDoc.exists()) {
-          const hostData = hostDoc.data();
-          const transactions = hostData.transactions || [];
-          
-          // Update the existing withdrawal_request transaction instead of creating a new one
-          const updatedTransactions = transactions.map(t => {
-            if (t.withdrawalRequestId === withdrawalId && t.type === "withdrawal_request") {
-              return {
-                ...t,
-                status: "completed",
-                description: `Withdrawal completed: $${withdrawal.amount.toFixed(2)} sent to ${withdrawal.paypalEmail} via PayPal. Real transfer processed by admin.`
-              };
-            }
-            return t;
-          });
+        try {
+          // Call Cloud Function to process PayPal payout
+          const payoutResult = await processPayPalPayout({
+            withdrawalId: withdrawalId,
+            recipientEmail: withdrawal.paypalEmail,
+            amount: withdrawal.amount.toFixed(2),
+            currency: "USD"
+          }, auth);
 
-          // Only update transaction history - do NOT update walletBalance
-          // walletBalance remains virtual/preview only - real money is in admin's PayPal
-          await updateDoc(hostRef, {
-            transactions: updatedTransactions
-          });
-        }
-        
-        // Mark all adminPayments linked to this withdrawal as completed
+          // Cloud Function handles updating Firestore with payout status
+          // Just update admin payments here
         try {
           const adminPaymentsQuery = query(
             collection(db, "adminPayments"),
@@ -1441,15 +1424,25 @@ const WithdrawalsContent = () => {
           await Promise.all(updatePromises);
         } catch (error) {
           console.error("Error updating admin payment records:", error);
+          }
+        } catch (payoutError) {
+          console.error("PayPal Payout Error:", payoutError);
+          // If payout fails, still update status but mark as failed
+          await updateDoc(withdrawalRef, {
+            ...updateData,
+            payoutError: payoutError.message,
+            payoutStatus: "FAILED"
+          });
+          throw payoutError;
         }
       } else if (newStatus === "rejected") {
-        // If rejected, return amount to pending balance and unlink payments
+        // If rejected, return amount to wallet balance and unlink payments
         const hostRef = doc(db, "users", withdrawal.hostId);
         const hostDoc = await getDoc(hostRef);
         
         if (hostDoc.exists()) {
           const hostData = hostDoc.data();
-          const currentPending = hostData.pendingBalance || 0;
+          const currentWalletBalance = hostData.walletBalance || 0;
           const transactions = hostData.transactions || [];
           
           // Update the existing withdrawal_request transaction instead of creating a new one
@@ -1458,14 +1451,14 @@ const WithdrawalsContent = () => {
               return {
                 ...t,
                 status: "rejected",
-                description: `Withdrawal rejected: $${withdrawal.amount.toFixed(2)} returned to pending balance`
+                description: `Withdrawal rejected: $${withdrawal.amount.toFixed(2)} returned to wallet balance`
               };
             }
             return t;
           });
 
           await updateDoc(hostRef, {
-            pendingBalance: currentPending + withdrawal.amount,
+            walletBalance: currentWalletBalance + withdrawal.amount,
             transactions: updatedTransactions
           });
         }
@@ -1498,7 +1491,7 @@ const WithdrawalsContent = () => {
       await updateDoc(withdrawalRef, updateData);
       
       if (newStatus === "completed") {
-        alert(`Withdrawal marked as completed! Please ensure you have sent $${withdrawal.amount.toFixed(2)} from your PayPal account to ${withdrawal.paypalEmail}.`);
+        alert(`Withdrawal marked as completed! Please ensure you have sent $${withdrawal.amount.toFixed(2)} from your Business Account 1 (admin account) to the host's Business Account 2 (${withdrawal.paypalEmail}).`);
       } else {
         alert(`Withdrawal ${newStatus} successfully!`);
       }
@@ -2888,12 +2881,13 @@ const PolicyContent = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     <p className="text-sm text-green-700 font-light">
-                      Reference PayPal: <span className="font-medium">{adminPaypalEmail}</span>
+                      Admin PayPal (Business Account 1 - receives all payments): <span className="font-medium">{adminPaypalEmail}</span>
                     </p>
                   </div>
                 </div>
               )}
             </div>
+            
           </div>
         </div>
       </div>
@@ -3208,28 +3202,70 @@ const CashoutApprovalsContent = () => {
         adminNotes: notes || null
       };
 
+      // IMPORTANT: When withdrawal is completed, automatically transfer money via PayPal Payouts API
       if (newStatus === "completed") {
-        const hostRef = doc(db, "users", withdrawal.hostId);
-        const hostDoc = await getDoc(hostRef);
-        
-        if (hostDoc.exists()) {
-          const hostData = hostDoc.data();
-          const currentBalance = hostData.walletBalance || 0;
-          const transactions = hostData.transactions || [];
+        try {
+          // Call Cloud Function to process PayPal payout
+          console.log("Calling PayPal payout API (Cash-out Approvals)...");
+          console.log("Withdrawal ID:", withdrawalId);
+          console.log("Recipient Email:", withdrawal.paypalEmail);
+          console.log("Amount:", withdrawal.amount.toFixed(2));
           
-          const transaction = {
-            type: "withdrawal_completed",
-            amount: withdrawal.amount,
-            withdrawalRequestId: withdrawalId,
-            date: new Date().toISOString(),
-            status: "completed",
-            description: `Withdrawal completed: $${withdrawal.amount.toFixed(2)} to ${withdrawal.paypalEmail}`
-          };
+          const payoutResult = await processPayPalPayout({
+            withdrawalId: withdrawalId,
+            recipientEmail: withdrawal.paypalEmail,
+            amount: withdrawal.amount.toFixed(2),
+            currency: "USD"
+          }, auth);
 
-          await updateDoc(hostRef, {
-            walletBalance: currentBalance + withdrawal.amount,
-            transactions: [transaction, ...transactions].slice(0, 10)
+          console.log("PayPal Payout Result:", payoutResult);
+
+          // Check if payout was successful
+          if (!payoutResult || !payoutResult.success) {
+            throw new Error(payoutResult?.error || "PayPal payout failed - no success response");
+          }
+
+          // Update withdrawal with payout details
+          await updateDoc(withdrawalRef, {
+            ...updateData,
+            payoutBatchId: payoutResult.payoutBatchId,
+            payoutStatus: payoutResult.batchStatus || "PENDING",
+            payoutCompletedAt: serverTimestamp()
           });
+
+          // Cloud Function handles updating Firestore with payout status
+          // Just update admin payments here
+          try {
+            const adminPaymentsQuery = query(
+              collection(db, "adminPayments"),
+              where("withdrawalRequestId", "==", withdrawalId)
+            );
+            const adminPaymentsSnapshot = await getDocs(adminPaymentsQuery);
+            
+            const updatePromises = adminPaymentsSnapshot.docs.map(paymentDoc =>
+              updateDoc(doc(db, "adminPayments", paymentDoc.id), {
+                status: "completed",
+                completedAt: serverTimestamp()
+              })
+            );
+            
+            await Promise.all(updatePromises);
+          } catch (error) {
+            console.error("Error updating admin payment records:", error);
+          }
+        } catch (payoutError) {
+          console.error("PayPal Payout Error:", payoutError);
+          console.error("PayPal Payout Error Details:", JSON.stringify(payoutError, null, 2));
+          
+          // If payout fails, still update status but mark as failed
+          await updateDoc(withdrawalRef, {
+            ...updateData,
+            payoutError: payoutError.message || payoutError.error || "Unknown error",
+            payoutStatus: "FAILED"
+          });
+          
+          alert(`PayPal payout failed: ${payoutError.message || payoutError.error || "Unknown error"}. Please check Vercel logs and PayPal credentials.`);
+          throw payoutError;
         }
       } else if (newStatus === "rejected") {
         const hostRef = doc(db, "users", withdrawal.hostId);
@@ -3237,7 +3273,7 @@ const CashoutApprovalsContent = () => {
         
         if (hostDoc.exists()) {
           const hostData = hostDoc.data();
-          const currentPending = hostData.pendingBalance || 0;
+          const currentWalletBalance = hostData.walletBalance || 0;
           const transactions = hostData.transactions || [];
           
           const transaction = {
@@ -3246,18 +3282,23 @@ const CashoutApprovalsContent = () => {
             withdrawalRequestId: withdrawalId,
             date: new Date().toISOString(),
             status: "rejected",
-            description: `Withdrawal rejected: $${withdrawal.amount.toFixed(2)} returned to pending balance`
+            description: `Withdrawal rejected: $${withdrawal.amount.toFixed(2)} returned to wallet balance`
           };
 
           await updateDoc(hostRef, {
-            pendingBalance: currentPending + withdrawal.amount,
+            walletBalance: currentWalletBalance + withdrawal.amount,
             transactions: [transaction, ...transactions].slice(0, 10)
           });
         }
       }
 
       await updateDoc(withdrawalRef, updateData);
+      
+      if (newStatus === "completed") {
+        alert(`Cash-out request processed successfully! $${withdrawal.amount.toFixed(2)} has been automatically transferred from Business Account 1 to the host's Business Account 2 (${withdrawal.paypalEmail}).`);
+      } else {
       alert(`Cash-out request ${newStatus} successfully!`);
+      }
     } catch (error) {
       console.error("Error updating withdrawal status:", error);
       alert("Failed to update withdrawal status. Please try again.");
