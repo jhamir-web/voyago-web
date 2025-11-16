@@ -25,8 +25,8 @@ export const functions = getFunctions(app);
 
 // Helper function to call PayPal Payout Server (Vercel)
 // Your deployed Vercel URL
-const PAYOUT_SERVER_URL = process.env.REACT_APP_PAYOUT_SERVER_URL || "https://voyago-f6zi89axw-jhamirs-projects-78cbce86.vercel.app";
-const PAYOUT_API_KEY = process.env.REACT_APP_PAYOUT_API_KEY || "voyago-secret-api-key-2024";
+const PAYOUT_SERVER_URL = "https://voyago-f6zi89axw-jhamirs-projects-78cbce86.vercel.app";
+const PAYOUT_API_KEY = "voyago-secret-api-key-2024";
 
 export const processPayPalPayout = async (data, auth) => {
   // Verify user is authenticated (still check Firebase auth)
