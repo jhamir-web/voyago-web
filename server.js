@@ -48,7 +48,12 @@ app.post('/api/payout', async (req, res) => {
     console.log('[AUTH SUCCESS] API Key validated');
 
     // Import PayPal SDK dynamically
-    const payoutsSdk = await import('@paypal/payouts-sdk');
+    const payoutsSdkModule = await import('@paypal/payouts-sdk');
+    // Handle both default export and named exports
+    const payoutsSdk = payoutsSdkModule.default || payoutsSdkModule;
+    
+    console.log('[PAYPAL] SDK loaded, checking structure...');
+    console.log('[PAYPAL] payoutsSdk keys:', Object.keys(payoutsSdk));
     
     // PayPal Configuration from environment variables
     const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID || 'ASEGKmY1EZ2TiV4AJdCqlBsoKQVcKBYBPsloT6k7P1LdpKKrLcV3qQtXMrKySCWPnh7TxU10mW8HUh84';
@@ -86,7 +91,16 @@ app.post('/api/payout', async (req, res) => {
       return res.status(400).json({ error: 'Invalid amount' });
     }
 
-    // Create PayPal Payout Request
+    // Create PayPal Payout Request - check if payouts exists
+    if (!payoutsSdk.payouts || !payoutsSdk.payouts.PayoutsPostRequest) {
+      console.error('[PAYPAL ERROR] PayoutsPostRequest not found in SDK');
+      console.error('[PAYPAL ERROR] Available keys:', Object.keys(payoutsSdk));
+      return res.status(500).json({
+        error: 'PayPal SDK structure issue: PayoutsPostRequest not found',
+        details: 'The PayPal SDK may not be installed correctly or version mismatch'
+      });
+    }
+
     const request = new payoutsSdk.payouts.PayoutsPostRequest();
     request.requestBody({
       sender_batch_header: {
