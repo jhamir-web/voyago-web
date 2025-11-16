@@ -3,12 +3,6 @@
   "buildCommand": "echo 'No build needed - API only'",
   "outputDirectory": ".",
   "framework": null,
-  "rewrites": [
-    {
-      "source": "/api/payout",
-      "destination": "/api/payout.js"
-    }
-  ],
   "headers": [
     {
       "source": "/api/(.*)",
