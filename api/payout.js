@@ -7,14 +7,12 @@ export default async function handler(req, res) {
   const method = req.method;
   
   if (method === 'OPTIONS') {
-    console.log('[CORS] OPTIONS preflight request - returning CORS headers immediately');
+    console.log('[CORS] OPTIONS preflight request - returning 200 with CORS headers');
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS, GET');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-api-key, Authorization');
     res.setHeader('Access-Control-Max-Age', '86400');
-    res.status(200);
-    res.end();
-    return; // MUST return here - no other code should run
+    return res.status(200).json({ message: 'CORS preflight OK' });
   }
 
   // For all other requests, set CORS headers first
