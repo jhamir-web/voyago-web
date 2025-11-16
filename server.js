@@ -8,8 +8,10 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Enable CORS for all routes
+// For production, you can restrict to specific domains:
+// origin: ['https://your-firebase-domain.web.app', 'https://your-firebase-domain.firebaseapp.com', 'http://localhost:5173']
 app.use(cors({
-  origin: '*',
+  origin: '*', // Allows all origins - change this to specific domains for production
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'x-api-key', 'Authorization'],
   credentials: false
