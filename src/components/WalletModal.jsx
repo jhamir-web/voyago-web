@@ -334,7 +334,8 @@ const WalletModal = ({ isOpen, onClose }) => {
                                            transaction.type === 'reward_claim' || 
                                            transaction.type === 'booking_payout' || 
                                            transaction.type === 'booking_refund' ||
-                                           transaction.type === 'booking_cancellation_refund';
+                                           transaction.type === 'booking_cancellation_refund' ||
+                                           transaction.type === 'booking_earnings';
                             return (
                               <>
                                 <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-full flex items-center justify-center flex-shrink-0 ${
@@ -374,7 +375,8 @@ const WalletModal = ({ isOpen, onClose }) => {
                                          transaction.type === 'reward_claim' || 
                                          transaction.type === 'booking_payout' || 
                                          transaction.type === 'booking_refund' ||
-                                         transaction.type === 'booking_cancellation_refund';
+                                         transaction.type === 'booking_cancellation_refund' ||
+                                         transaction.type === 'booking_earnings';
                           return (
                             <p className={`text-sm sm:text-base font-medium flex-shrink-0 ml-3 ${
                               isCredit ? 'text-[#34C759]' : 'text-red-500'
