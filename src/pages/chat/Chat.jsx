@@ -28,6 +28,14 @@ const Chat = () => {
   const isUserScrollingRef = useRef(false);
   const previousMessageCountRef = useRef(0);
 
+  // Helper function to create a normalized conversationId (same for both users)
+  const getConversationId = (userId1, userId2) => {
+    if (!userId1 || !userId2) return null;
+    // Sort user IDs alphabetically to ensure both users get the same conversationId
+    const sortedIds = [userId1, userId2].sort();
+    return `${sortedIds[0]}_${sortedIds[1]}`;
+  };
+
   // Handle "Contact Host" without booking - create conversation from listing
   useEffect(() => {
     if (location.state && location.state.listingId && location.state.hostId && currentUser && userRole === "guest") {
@@ -38,30 +46,53 @@ const Chat = () => {
       if (existingConv) {
         setSelectedOtherUserId(existingConv.otherUserId);
         setSelectedBookingIds(existingConv.bookings.map(b => b.id));
+        if (existingConv.userData) {
+          setOtherUserData(existingConv.userData);
+        }
       } else {
         // Create a temporary conversation entry
         setSelectedOtherUserId(stateHostId);
         setSelectedBookingIds([]); // No bookings yet
         setListingId(stateListingId);
         
-        // Fetch host user data
+        // Set otherUserData immediately with fallback data so messaging interface shows right away
+        const fallbackUserData = {
+          name: stateHostEmail || "Host",
+          email: stateHostEmail,
+          role: "host"
+        };
+        setOtherUserData(fallbackUserData);
+        
+        // Also add to conversations list immediately so it appears in sidebar
+        const tempConversation = {
+          otherUserId: stateHostId,
+          bookings: [],
+          userData: fallbackUserData,
+          lastMessage: null,
+          unreadCount: 0,
+          lastActivityTime: new Date().getTime()
+        };
+        setConversations(prev => {
+          const exists = prev.find(c => c.otherUserId === stateHostId);
+          if (exists) return prev;
+          return [tempConversation, ...prev];
+        });
+        
+        // Fetch host user data and update if we get better data
         getDoc(doc(db, "users", stateHostId)).then(hostDoc => {
           if (hostDoc.exists()) {
-            setOtherUserData({ id: hostDoc.id, ...hostDoc.data() });
-          } else {
-            setOtherUserData({
-              name: stateHostEmail || "Host",
-              email: stateHostEmail,
-              role: "host"
-            });
+            const fullUserData = { id: hostDoc.id, ...hostDoc.data() };
+            setOtherUserData(fullUserData);
+            // Update conversation with better user data
+            setConversations(prev => prev.map(c => 
+              c.otherUserId === stateHostId 
+                ? { ...c, userData: fullUserData }
+                : c
+            ));
           }
         }).catch(err => {
           console.error("Error fetching host data:", err);
-          setOtherUserData({
-            name: stateHostEmail || "Host",
-            email: stateHostEmail,
-            role: "host"
-          });
+          // Keep the fallback data we already set
         });
       }
       
@@ -332,7 +363,14 @@ const Chat = () => {
         // Sort by last activity time
         conversationsData.sort((a, b) => b.lastActivityTime - a.lastActivityTime);
 
-        setConversations(conversationsData);
+        // Preserve manually added conversations (without bookings) that aren't in the fetched data
+        setConversations(prev => {
+          const fetchedUserIds = new Set(conversationsData.map(c => c.otherUserId));
+          const preservedConvs = prev.filter(c => 
+            c.bookings.length === 0 && !fetchedUserIds.has(c.otherUserId)
+          );
+          return [...conversationsData, ...preservedConvs].sort((a, b) => b.lastActivityTime - a.lastActivityTime);
+        });
         
         // If URL has bookingId, find the conversation and select it
         if (urlBookingId && urlBookingId !== 'new') {
@@ -452,7 +490,8 @@ const Chat = () => {
     const unsubscribeFunctions = [];
 
     const updateMessages = () => {
-      const messagesArray = Array.from(allMessages.values());
+      // Create a completely new array to ensure React detects the change
+      const messagesArray = Array.from(allMessages.values()).map(msg => ({ ...msg }));
       messagesArray.sort((a, b) => {
         const dateA = new Date(a.createdAt || 0);
         const dateB = new Date(b.createdAt || 0);
@@ -462,7 +501,10 @@ const Chat = () => {
       const isNewMessage = messagesArray.length > previousMessageCountRef.current;
       previousMessageCountRef.current = messagesArray.length;
       
+      // Force state update with new array reference
       setMessages(messagesArray);
+      
+      // Mark messages as read (async, don't block)
       markMessagesAsRead(messagesArray);
       
       if (isNewMessage) {
@@ -516,14 +558,45 @@ const Chat = () => {
 
         const unsubscribeSent = onSnapshot(
           sentQuery,
-      (snapshot) => {
-        snapshot.forEach((doc) => {
-              allMessages.set(doc.id, { id: doc.id, ...doc.data() });
+          (snapshot) => {
+            // Use docChanges for incremental updates
+            snapshot.docChanges().forEach((change) => {
+              if (change.type === 'removed') {
+                allMessages.delete(change.doc.id);
+              } else {
+                const msgData = { id: change.doc.id, ...change.doc.data() };
+                // Remove optimistic message if real one exists
+                allMessages.forEach((existingMsg, msgId) => {
+                  if (existingMsg.isOptimistic && 
+                      existingMsg.message === msgData.message &&
+                      existingMsg.senderId === msgData.senderId &&
+                      Math.abs(new Date(existingMsg.createdAt) - new Date(msgData.createdAt)) < 5000) {
+                    allMessages.delete(msgId);
+                  }
+                });
+                allMessages.set(change.doc.id, msgData);
+              }
             });
-        updateMessages();
-      },
-      (error) => {
-        console.error("Error listening to sent messages:", error);
+            
+            // Also ensure all existing docs are in the map (for initial load)
+            snapshot.forEach((doc) => {
+              const msgData = { id: doc.id, ...doc.data() };
+              // Remove optimistic message if real one exists
+              allMessages.forEach((existingMsg, msgId) => {
+                if (existingMsg.isOptimistic && 
+                    existingMsg.message === msgData.message &&
+                    existingMsg.senderId === msgData.senderId &&
+                    Math.abs(new Date(existingMsg.createdAt) - new Date(msgData.createdAt)) < 5000) {
+                  allMessages.delete(msgId);
+                }
+              });
+              allMessages.set(doc.id, msgData);
+            });
+            
+            updateMessages();
+          },
+          (error) => {
+            console.error("Error listening to sent messages:", error);
           }
         );
 
@@ -538,9 +611,40 @@ const Chat = () => {
         const unsubscribeReceived = onSnapshot(
           receivedQuery,
           (snapshot) => {
-            snapshot.forEach((doc) => {
-              allMessages.set(doc.id, { id: doc.id, ...doc.data() });
+            // Use docChanges for incremental updates
+            snapshot.docChanges().forEach((change) => {
+              if (change.type === 'removed') {
+                allMessages.delete(change.doc.id);
+              } else {
+                const msgData = { id: change.doc.id, ...change.doc.data() };
+                // Remove optimistic message if real one exists
+                allMessages.forEach((existingMsg, msgId) => {
+                  if (existingMsg.isOptimistic && 
+                      existingMsg.message === msgData.message &&
+                      existingMsg.senderId === msgData.senderId &&
+                      Math.abs(new Date(existingMsg.createdAt) - new Date(msgData.createdAt)) < 5000) {
+                    allMessages.delete(msgId);
+                  }
+                });
+                allMessages.set(change.doc.id, msgData);
+              }
             });
+            
+            // Also ensure all existing docs are in the map (for initial load)
+            snapshot.forEach((doc) => {
+              const msgData = { id: doc.id, ...doc.data() };
+              // Remove optimistic message if real one exists
+              allMessages.forEach((existingMsg, msgId) => {
+                if (existingMsg.isOptimistic && 
+                    existingMsg.message === msgData.message &&
+                    existingMsg.senderId === msgData.senderId &&
+                    Math.abs(new Date(existingMsg.createdAt) - new Date(msgData.createdAt)) < 5000) {
+                  allMessages.delete(msgId);
+                }
+              });
+              allMessages.set(doc.id, msgData);
+            });
+            
             updateMessages();
           },
           (error) => {
@@ -551,93 +655,212 @@ const Chat = () => {
         unsubscribeFunctions.push(unsubscribeSent, unsubscribeReceived);
       });
     } else {
-      // Listen for messages without bookings (using conversationId or direct user pair)
-      const conversationId = `${currentUser.uid}_${selectedOtherUserId}`;
-      const altConversationId = `${selectedOtherUserId}_${currentUser.uid}`;
+      // Listen for messages without bookings (using conversationId)
+      // Use normalized conversationId so both users use the same format
+      const conversationId = getConversationId(currentUser.uid, selectedOtherUserId);
+      if (!conversationId) return;
       
-      // Sent messages
-      const sentQuery1 = query(
+      // Also check the old format for backward compatibility (in case old messages exist)
+      const oldFormat1 = `${currentUser.uid}_${selectedOtherUserId}`;
+      const oldFormat2 = `${selectedOtherUserId}_${currentUser.uid}`;
+      
+      // Listen to ALL messages in the conversation (normalized format)
+      // Try with orderBy first (requires index)
+      const allMessagesQuery = query(
         collection(db, "messages"),
         where("conversationId", "==", conversationId),
-        where("senderId", "==", currentUser.uid),
         orderBy("createdAt", "asc")
       );
       
-      const sentQuery2 = query(
+      // Fallback query without orderBy (works without index, we'll sort in memory)
+      const allMessagesQueryFallback = query(
         collection(db, "messages"),
-        where("conversationId", "==", altConversationId),
-        where("senderId", "==", currentUser.uid),
+        where("conversationId", "==", conversationId)
+      );
+      
+      // Also listen to old format for backward compatibility
+      const allMessagesQueryOld1 = query(
+        collection(db, "messages"),
+        where("conversationId", "==", oldFormat1),
+        orderBy("createdAt", "asc")
+      );
+      
+      const allMessagesQueryOld2 = query(
+        collection(db, "messages"),
+        where("conversationId", "==", oldFormat2),
         orderBy("createdAt", "asc")
       );
 
-      const unsubscribeSent1 = onSnapshot(
-        sentQuery1,
-      (snapshot) => {
-        snapshot.forEach((doc) => {
-            allMessages.set(doc.id, { id: doc.id, ...doc.data() });
+      // Helper function to process snapshot
+      const processSnapshot = (snapshot, source = "primary") => {
+        let hasChanges = false;
+        
+        // First, collect optimistic messages to remove (avoid modifying Map while iterating)
+        const optimisticToRemove = [];
+        snapshot.docChanges().forEach((change) => {
+          if (change.type !== 'removed') {
+            const msgData = { id: change.doc.id, ...change.doc.data() };
+            // Find matching optimistic messages
+            allMessages.forEach((existingMsg, msgId) => {
+              if (existingMsg.isOptimistic && 
+                  existingMsg.message === msgData.message &&
+                  existingMsg.senderId === msgData.senderId &&
+                  Math.abs(new Date(existingMsg.createdAt) - new Date(msgData.createdAt)) < 5000) {
+                optimisticToRemove.push(msgId);
+              }
+            });
+          }
+        });
+        
+        // Remove optimistic messages
+        optimisticToRemove.forEach(msgId => {
+          allMessages.delete(msgId);
+          hasChanges = true;
+        });
+        
+        // Use docChanges for incremental updates
+        snapshot.docChanges().forEach((change) => {
+          const msgData = { id: change.doc.id, ...change.doc.data() };
+          // Only include messages where current user is involved
+          if (msgData.senderId === currentUser.uid || msgData.receiverId === currentUser.uid) {
+            if (change.type === 'removed') {
+              if (allMessages.has(change.doc.id)) {
+                allMessages.delete(change.doc.id);
+                hasChanges = true;
+              }
+            } else {
+              // Added or modified - always update to get latest data
+              const wasNew = !allMessages.has(change.doc.id);
+              allMessages.set(change.doc.id, msgData);
+              hasChanges = true;
+              
+              // Log for debugging
+              if (wasNew && msgData.receiverId === currentUser.uid) {
+                console.log(`New message received (${source}):`, msgData.message, "from", msgData.senderId);
+              }
+            }
+          }
+        });
+        
+        // Also ensure all existing docs in snapshot are in the map (for initial load)
+        // This handles the case where docChanges might be empty on first load
+        if (snapshot.docChanges().length === 0 && snapshot.size > 0) {
+          snapshot.forEach((doc) => {
+            const msgData = { id: doc.id, ...doc.data() };
+            if (msgData.senderId === currentUser.uid || msgData.receiverId === currentUser.uid) {
+              if (!allMessages.has(doc.id)) {
+                allMessages.set(doc.id, msgData);
+                hasChanges = true;
+              }
+            }
+          });
+        }
+        
+        // Always update if there were changes or if docChanges has items
+        if (hasChanges || snapshot.docChanges().length > 0) {
+          updateMessages();
+        }
+      };
+
+      // Listen to all messages in conversation (normalized format - primary)
+      const unsubscribeAll = onSnapshot(
+        allMessagesQuery,
+        (snapshot) => {
+          console.log("Snapshot received - size:", snapshot.size, "docChanges:", snapshot.docChanges().length, "conversationId:", conversationId);
+          processSnapshot(snapshot, "primary");
+        },
+        (error) => {
+          console.error("Error listening to all messages (primary query):", error);
+          // If query fails due to missing index, the fallback will handle it
+          if (error.code === 'failed-precondition') {
+            console.warn("Firestore index is building. Fallback query should handle messages.");
+          }
+        }
+      );
+
+      // Set up fallback query (without orderBy) that works even if index is missing
+      // This will run in parallel and catch messages even if primary query fails
+      const unsubscribeFallback = onSnapshot(
+        allMessagesQueryFallback,
+        (snapshot) => {
+          // Only process if we got messages and primary query might have failed
+          // We'll let the primary query handle it if it's working
+          if (snapshot.size > 0) {
+            console.log("Fallback snapshot received - size:", snapshot.size, "docChanges:", snapshot.docChanges().length);
+            processSnapshot(snapshot, "fallback");
+          }
+        },
+        (error) => {
+          console.error("Fallback query also failed:", error);
+        }
+      );
+
+      // Listen to old format messages for backward compatibility
+      const unsubscribeOld1 = onSnapshot(
+        allMessagesQueryOld1,
+        (snapshot) => {
+          // Use docChanges for incremental updates
+          snapshot.docChanges().forEach((change) => {
+            const msgData = { id: change.doc.id, ...change.doc.data() };
+            if (msgData.senderId === currentUser.uid || msgData.receiverId === currentUser.uid) {
+              if (change.type === 'removed') {
+                allMessages.delete(change.doc.id);
+              } else {
+                allMessages.set(change.doc.id, msgData);
+              }
+            }
+          });
+          
+          // Also ensure all existing docs are in the map
+          snapshot.forEach((doc) => {
+            const msgData = { id: doc.id, ...doc.data() };
+            if (msgData.senderId === currentUser.uid || msgData.receiverId === currentUser.uid) {
+              if (!allMessages.has(doc.id)) {
+                allMessages.set(doc.id, msgData);
+              }
+            }
           });
           updateMessages();
         },
         (error) => {
-          console.error("Error listening to sent messages:", error);
+          // Old format might not exist, that's okay
+          console.log("Old format query 1:", error.message);
         }
       );
-      
-      const unsubscribeSent2 = onSnapshot(
-        sentQuery2,
+
+      const unsubscribeOld2 = onSnapshot(
+        allMessagesQueryOld2,
         (snapshot) => {
+          // Use docChanges for incremental updates
+          snapshot.docChanges().forEach((change) => {
+            const msgData = { id: change.doc.id, ...change.doc.data() };
+            if (msgData.senderId === currentUser.uid || msgData.receiverId === currentUser.uid) {
+              if (change.type === 'removed') {
+                allMessages.delete(change.doc.id);
+              } else {
+                allMessages.set(change.doc.id, msgData);
+              }
+            }
+          });
+          
+          // Also ensure all existing docs are in the map
           snapshot.forEach((doc) => {
-            allMessages.set(doc.id, { id: doc.id, ...doc.data() });
+            const msgData = { id: doc.id, ...doc.data() };
+            if (msgData.senderId === currentUser.uid || msgData.receiverId === currentUser.uid) {
+              if (!allMessages.has(doc.id)) {
+                allMessages.set(doc.id, msgData);
+              }
+            }
           });
           updateMessages();
         },
         (error) => {
-          console.error("Error listening to sent messages:", error);
+          // Old format might not exist, that's okay
+          console.log("Old format query 2:", error.message);
         }
       );
 
-      // Received messages
-      const receivedQuery1 = query(
-        collection(db, "messages"),
-        where("conversationId", "==", conversationId),
-        where("receiverId", "==", currentUser.uid),
-        orderBy("createdAt", "asc")
-      );
-      
-      const receivedQuery2 = query(
-        collection(db, "messages"),
-        where("conversationId", "==", altConversationId),
-        where("receiverId", "==", currentUser.uid),
-        orderBy("createdAt", "asc")
-      );
-
-      const unsubscribeReceived1 = onSnapshot(
-        receivedQuery1,
-        (snapshot) => {
-          snapshot.forEach((doc) => {
-            allMessages.set(doc.id, { id: doc.id, ...doc.data() });
-          });
-        updateMessages();
-      },
-      (error) => {
-        console.error("Error listening to received messages:", error);
-        }
-      );
-      
-      const unsubscribeReceived2 = onSnapshot(
-        receivedQuery2,
-        (snapshot) => {
-          snapshot.forEach((doc) => {
-            allMessages.set(doc.id, { id: doc.id, ...doc.data() });
-          });
-          updateMessages();
-        },
-        (error) => {
-          console.error("Error listening to received messages:", error);
-        }
-      );
-
-      unsubscribeFunctions.push(unsubscribeSent1, unsubscribeSent2, unsubscribeReceived1, unsubscribeReceived2);
+      unsubscribeFunctions.push(unsubscribeAll, unsubscribeFallback, unsubscribeOld1, unsubscribeOld2);
     }
 
     return () => {
@@ -683,10 +906,13 @@ const Chat = () => {
   useEffect(() => {
     if (!currentUser || !selectedOtherUserId) return;
 
-    // Use bookingId if available, otherwise use conversationId
+    // Use bookingId if available, otherwise use normalized conversationId
     const conversationId = selectedBookingIds.length 
       ? selectedBookingIds[0] 
-      : `${currentUser.uid}_${selectedOtherUserId}`;
+      : getConversationId(currentUser.uid, selectedOtherUserId);
+    
+    if (!conversationId) return;
+    
     const typingDocRef = doc(db, "typing", `${conversationId}_${currentUser.uid}`);
     
     if (!newMessage.trim()) {
@@ -731,10 +957,13 @@ const Chat = () => {
   useEffect(() => {
     if (!currentUser || !selectedOtherUserId) return;
 
-    // Use bookingId if available, otherwise use conversationId
+    // Use bookingId if available, otherwise use normalized conversationId
     const conversationId = selectedBookingIds.length 
       ? selectedBookingIds[0] 
-      : `${currentUser.uid}_${selectedOtherUserId}`;
+      : getConversationId(currentUser.uid, selectedOtherUserId);
+    
+    if (!conversationId) return;
+    
     const otherUserTypingDocRef = doc(db, "typing", `${conversationId}_${selectedOtherUserId}`);
 
     const unsubscribe = onSnapshot(
@@ -772,10 +1001,16 @@ const Chat = () => {
       clearTimeout(typingTimeoutRef.current);
     }
     
-    // Use bookingId if available, otherwise use a conversation ID based on user IDs
+    // Use bookingId if available, otherwise use normalized conversation ID
     const conversationId = selectedBookingIds.length 
       ? selectedBookingIds[0] 
-      : `${currentUser.uid}_${selectedOtherUserId}`;
+      : getConversationId(currentUser.uid, selectedOtherUserId);
+    
+    if (!conversationId) {
+      console.error("Cannot send message: invalid conversationId");
+      setSending(false);
+      return;
+    }
     
     if (currentUser) {
       const typingDocRef = doc(db, "typing", `${conversationId}_${currentUser.uid}`);
@@ -797,6 +1032,9 @@ const Chat = () => {
       const receiverId = selectedOtherUserId;
       const receiverEmail = otherUserData?.email || "";
 
+      const createdAt = new Date().toISOString();
+      const tempMessageId = `temp_${Date.now()}_${Math.random()}`;
+      
       const messageData = {
         bookingId: selectedBookingIds.length ? selectedBookingIds[0] : null,
         listingId: listingId || null,
@@ -807,11 +1045,41 @@ const Chat = () => {
         receiverId: receiverId,
         receiverEmail: receiverEmail,
         message: messageText,
-        createdAt: new Date().toISOString(),
+        createdAt: createdAt,
         read: false,
       };
 
-      await addDoc(collection(db, "messages"), messageData);
+      // Optimistic update: Add message to local state immediately
+      const optimisticMessage = {
+        id: tempMessageId,
+        ...messageData,
+        isOptimistic: true, // Flag to identify temporary messages
+      };
+      
+      setMessages(prev => {
+        const newMessages = [...prev, optimisticMessage];
+        // Sort by createdAt
+        newMessages.sort((a, b) => {
+          const dateA = new Date(a.createdAt || 0);
+          const dateB = new Date(b.createdAt || 0);
+          return dateA - dateB;
+        });
+        return newMessages;
+      });
+      
+      // Scroll to bottom immediately
+      isUserScrollingRef.current = false;
+      setTimeout(() => {
+        if (messagesEndRef.current) {
+          messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+        }
+      }, 50);
+
+      // Send to Firestore
+      const docRef = await addDoc(collection(db, "messages"), messageData);
+      
+      // The optimistic message will be replaced by the real one when Firestore listener picks it up
+      // We keep it visible until then to avoid flickering
       
       // If this was the first message and we don't have bookings, refresh conversations
       if (!selectedBookingIds.length) {
@@ -820,7 +1088,7 @@ const Chat = () => {
           otherUserId: selectedOtherUserId,
           bookings: [],
           userData: otherUserData,
-          lastMessage: messageData,
+          lastMessage: { ...messageData, id: docRef.id },
           unreadCount: 0,
           lastActivityTime: new Date().getTime()
         };
@@ -833,16 +1101,11 @@ const Chat = () => {
         });
       }
       
-      isUserScrollingRef.current = false;
-      setTimeout(() => {
-        if (messagesEndRef.current) {
-          messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
-        }
-      }, 100);
-      
       setSending(false);
     } catch (error) {
       console.error("Error sending message:", error);
+      // Remove optimistic message on error
+      setMessages(prev => prev.filter(msg => !msg.isOptimistic || msg.message !== messageText));
       setNewMessage(messageText);
       alert("Failed to send message. Please try again.");
       setSending(false);
