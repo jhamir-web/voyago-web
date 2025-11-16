@@ -614,7 +614,7 @@ const CreateListingFlow = () => {
                   key={step.id}
                   className={`flex-shrink-0 text-xs font-light transition-colors ${
                     index === currentStep
-                      ? "text-[#FF9500] border-b-2 border-[#FF9500] pb-1"
+                      ? "text-[#0071E3] border-b-2 border-[#0071E3] pb-1"
                       : index < currentStep
                       ? "text-[#1C1C1E]"
                       : "text-[#8E8E93]"
@@ -685,7 +685,7 @@ const CreateListingFlow = () => {
                 disabled={loading || savingDraft || !isCurrentStepValid()}
                 className={`px-8 py-3 rounded-xl text-sm font-medium transition-colors ${
                   isCurrentStepValid()
-                    ? "bg-[#FF9500] text-white hover:bg-[#E08500]"
+                    ? "bg-[#0071E3] text-white hover:bg-[#0051D0]"
                     : "bg-gray-300 text-gray-500 cursor-not-allowed"
                 } disabled:opacity-50 disabled:cursor-not-allowed`}
               >
@@ -959,27 +959,33 @@ const ActivityTypeSelection = ({ formData, setFormData }) => {
 
 const DescribePlace = ({ formData, setFormData }) => {
   const options = [
-    { id: "entire", label: "Entire Place", description: "Guests have the whole place" },
-    { id: "private", label: "Private Room", description: "Guests share some spaces" },
-    { id: "shared", label: "Shared Room", description: "Guests stay in a shared space" },
+    { id: "entire", label: "Entire Place", description: "Guests have the whole place", icon: "🏠" },
+    { id: "private", label: "Private Room", description: "Guests share some spaces", icon: "🚪" },
+    { id: "shared", label: "Shared Room", description: "Guests stay in a shared space", icon: "🛏️" },
   ];
 
   return (
     <div className="space-y-6 animate-fadeInUp">
-      <h2 className="text-3xl sm:text-4xl font-light text-[#1C1C1E] mb-2">Describe Place</h2>
-      <div className="space-y-4">
+      <div>
+        <h2 className="text-3xl sm:text-4xl font-light text-[#1C1C1E] mb-2">Describe Place</h2>
+        <p className="text-sm text-[#8E8E93] font-light">Choose how guests will experience your place</p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {options.map((option) => (
           <button
             key={option.id}
             onClick={() => setFormData(prev => ({ ...prev, describePlace: option.id }))}
-            className={`w-full p-6 rounded-2xl border-2 transition-all duration-200 text-left ${
+            className={`group p-6 rounded-2xl border-2 transition-all duration-200 text-left hover:shadow-lg ${
               formData.describePlace === option.id
-                ? "border-[#FF9500] bg-[#FF9500]/5 shadow-md"
-                : "border-gray-200 hover:border-gray-300 hover:shadow-sm"
+                ? "border-[#0071E3] bg-[#0071E3]/5 shadow-md"
+                : "border-gray-200 hover:border-[#0071E3]/30 hover:bg-gray-50"
             }`}
           >
-            <div className="text-xl font-medium text-[#1C1C1E] mb-1">{option.label}</div>
-            <div className="text-sm text-[#8E8E93] font-light">{option.description}</div>
+            <div className="text-4xl mb-3">{option.icon}</div>
+            <div className="text-lg sm:text-xl font-semibold text-[#1C1C1E] mb-2 group-hover:text-[#0071E3] transition-colors">
+              {option.label}
+            </div>
+            <div className="text-sm text-[#8E8E93] font-light leading-relaxed">{option.description}</div>
           </button>
         ))}
       </div>
@@ -1116,7 +1122,7 @@ const LocationStep = ({ formData, setFormData, coordinates, setCoordinates, mapC
           <button
             type="button"
             onClick={handleAddressSearch}
-            className="px-6 py-3 bg-[#FF9500] text-white rounded-xl text-sm font-medium hover:bg-[#E08500] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-6 py-3 bg-[#0071E3] text-white rounded-xl text-sm font-medium hover:bg-[#0051D0] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             disabled={!mapLoaded || !searchQuery.trim()}
           >
             Search
@@ -1356,11 +1362,11 @@ const BasicInfo = ({ formData, setFormData }) => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
                 </svg>
               </button>
-              <span className="text-2xl font-light text-[#FF9500] min-w-[3rem] text-center">{formData.bedrooms || 0}</span>
+              <span className="text-2xl font-light text-[#0071E3] min-w-[3rem] text-center">{formData.bedrooms || 0}</span>
               <button
                 type="button"
                 onClick={() => updateCount("bedrooms", 1)}
-                className="w-10 h-10 rounded-full bg-[#FF9500] hover:bg-[#E08500] flex items-center justify-center transition-colors"
+                className="w-10 h-10 rounded-full bg-[#0071E3] hover:bg-[#0051D0] flex items-center justify-center transition-colors"
               >
                 <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -1392,11 +1398,11 @@ const BasicInfo = ({ formData, setFormData }) => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
                 </svg>
               </button>
-              <span className="text-2xl font-light text-[#FF9500] min-w-[3rem] text-center">{formData.beds || 0}</span>
+              <span className="text-2xl font-light text-[#0071E3] min-w-[3rem] text-center">{formData.beds || 0}</span>
               <button
                 type="button"
                 onClick={() => updateCount("beds", 1)}
-                className="w-10 h-10 rounded-full bg-[#FF9500] hover:bg-[#E08500] flex items-center justify-center transition-colors"
+                className="w-10 h-10 rounded-full bg-[#0071E3] hover:bg-[#0051D0] flex items-center justify-center transition-colors"
               >
                 <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -1428,11 +1434,11 @@ const BasicInfo = ({ formData, setFormData }) => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
                 </svg>
               </button>
-              <span className="text-2xl font-light text-[#FF9500] min-w-[3rem] text-center">{formData.bathrooms || 0}</span>
+              <span className="text-2xl font-light text-[#0071E3] min-w-[3rem] text-center">{formData.bathrooms || 0}</span>
               <button
                 type="button"
                 onClick={() => updateCount("bathrooms", 1)}
-                className="w-10 h-10 rounded-full bg-[#FF9500] hover:bg-[#E08500] flex items-center justify-center transition-colors"
+                className="w-10 h-10 rounded-full bg-[#0071E3] hover:bg-[#0051D0] flex items-center justify-center transition-colors"
               >
                 <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -1469,13 +1475,13 @@ const Guests = ({ formData, setFormData }) => {
           </svg>
         </button>
         <div className="text-center">
-          <div className="text-6xl font-light text-[#FF9500] mb-2">{formData.maxGuests || 1}</div>
+          <div className="text-6xl font-light text-[#0071E3] mb-2">{formData.maxGuests || 1}</div>
           <div className="text-sm text-[#8E8E93] font-light">guests</div>
         </div>
         <button
           type="button"
           onClick={() => updateGuests(1)}
-          className="w-14 h-14 rounded-full bg-[#FF9500] hover:bg-[#E08500] flex items-center justify-center transition-colors"
+          className="w-14 h-14 rounded-full bg-[#0071E3] hover:bg-[#0051D0] flex items-center justify-center transition-colors"
         >
           <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -1522,7 +1528,7 @@ const Amenities = ({ formData, setFormData }) => {
             onClick={() => toggleAmenity(amenity)}
             className={`p-4 rounded-xl border-2 transition-all duration-200 ${
               formData.amenities.includes(amenity)
-                ? "border-[#FF9500] bg-[#FF9500]/5"
+                ? "border-[#0071E3] bg-[#0071E3]/5"
                 : "border-gray-200 hover:border-gray-300"
             }`}
           >
@@ -1544,7 +1550,7 @@ const Amenities = ({ formData, setFormData }) => {
           <button
             type="button"
             onClick={addCustomAmenity}
-            className="px-6 py-3 bg-[#FF9500] text-white rounded-xl text-sm font-medium hover:bg-[#E08500] transition-colors"
+            className="px-6 py-3 bg-[#0071E3] text-white rounded-xl text-sm font-medium hover:bg-[#0051D0] transition-colors"
           >
             Add
           </button>
@@ -1622,8 +1628,8 @@ const Photos = ({ images, setImages, imagePreviews, setImagePreviews }) => {
           onDrop={handleDrop}
           className={`block w-full h-64 sm:h-80 bg-[#F2F2F7] border-2 border-dashed rounded-xl cursor-pointer transition-all flex items-center justify-center ${
             isDragging
-              ? "border-[#FF9500] bg-[#FF9500]/10 scale-[1.02]"
-              : "border-gray-300 hover:border-[#FF9500] hover:bg-[#FF9500]/5"
+              ? "border-[#0071E3] bg-[#0071E3]/10 scale-[1.02]"
+              : "border-gray-300 hover:border-[#0071E3] hover:bg-[#0071E3]/5"
           }`}
         >
           <div className="text-center">
@@ -1642,7 +1648,7 @@ const Photos = ({ images, setImages, imagePreviews, setImagePreviews }) => {
           onDrop={handleDrop}
           className={`w-full min-h-64 sm:min-h-80 bg-[#F2F2F7] border-2 border-dashed rounded-xl transition-all p-4 ${
             isDragging
-              ? "border-[#FF9500] bg-[#FF9500]/10"
+              ? "border-[#0071E3] bg-[#0071E3]/10"
               : "border-gray-300"
           }`}
         >
@@ -1650,7 +1656,7 @@ const Photos = ({ images, setImages, imagePreviews, setImagePreviews }) => {
             {imagePreviews.map((preview, index) => (
               <div key={index} className="relative group aspect-square">
                 {index === 0 && (
-                  <div className="absolute top-2 left-2 z-10 bg-[#FF9500] text-white text-xs font-medium px-2 py-1 rounded">
+                  <div className="absolute top-2 left-2 z-10 bg-[#0071E3] text-white text-xs font-medium px-2 py-1 rounded">
                     Cover
                   </div>
                 )}
@@ -1675,7 +1681,7 @@ const Photos = ({ images, setImages, imagePreviews, setImagePreviews }) => {
               </div>
             ))}
             <div
-              className="aspect-square border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center hover:border-[#FF9500] transition-colors cursor-pointer"
+              className="aspect-square border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center hover:border-[#0071E3] transition-colors cursor-pointer"
               onClick={() => {
                 document.getElementById("photo-upload").click();
               }}
@@ -1714,7 +1720,7 @@ const TitleDescription = ({ formData, setFormData }) => {
                 setFormData(prev => ({ ...prev, title: e.target.value }));
               }
             }}
-            className="w-full px-4 py-3 bg-white border-2 border-[#FF9500]/30 rounded-xl text-sm text-[#1C1C1E] focus:outline-none focus:ring-2 focus:ring-[#FF9500]/20 focus:border-[#FF9500] transition-all"
+            className="w-full px-4 py-3 bg-white border-2 border-[#0071E3]/30 rounded-xl text-sm text-[#1C1C1E] focus:outline-none focus:ring-2 focus:ring-[#0071E3]/20 focus:border-[#0071E3] transition-all"
             placeholder="Catchy title for your listing."
             maxLength={titleMaxLength}
           />
@@ -1750,51 +1756,31 @@ const TitleDescription = ({ formData, setFormData }) => {
 };
 
 const Pricing = ({ formData, setFormData }) => {
-  const [pricingModel, setPricingModel] = useState("fixed");
-
   return (
     <div className="space-y-6 animate-fadeInUp">
-      <h2 className="text-3xl sm:text-4xl font-light text-[#1C1C1E] mb-2">Set your price</h2>
-      <div className="space-y-6">
-        <div>
-          <label className="block text-sm font-medium text-[#1C1C1E] mb-3">Pricing Model</label>
-          <div className="flex gap-4">
-            <button
-              type="button"
-              onClick={() => setPricingModel("fixed")}
-              className={`flex-1 px-6 py-4 rounded-xl border-2 transition-all duration-200 ${
-                pricingModel === "fixed"
-                  ? "border-[#FF9500] bg-[#FF9500]/5"
-                  : "border-gray-200 hover:border-gray-300"
-              }`}
-            >
-              <div className="text-base font-medium text-[#1C1C1E]">Fixed Price</div>
-            </button>
-            <button
-              type="button"
-              onClick={() => setPricingModel("perGuest")}
-              className={`flex-1 px-6 py-4 rounded-xl border-2 transition-all duration-200 ${
-                pricingModel === "perGuest"
-                  ? "border-[#FF9500] bg-[#FF9500]/5"
-                  : "border-gray-200 hover:border-gray-300"
-              }`}
-            >
-              <div className="text-base font-medium text-[#1C1C1E]">Per Guest</div>
-            </button>
-          </div>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-[#1C1C1E] mb-2">Base Price (P)</label>
+      <div>
+        <h2 className="text-3xl sm:text-4xl font-light text-[#1C1C1E] mb-2">Set your price</h2>
+        <p className="text-sm text-[#8E8E93] font-light">Enter the price for your listing</p>
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-[#1C1C1E] mb-3">
+          Price <span className="text-red-500">*</span>
+        </label>
+        <div className="relative">
+          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-lg font-medium text-[#1C1C1E]">$</span>
           <input
             type="number"
             value={formData.price}
             onChange={(e) => setFormData(prev => ({ ...prev, price: e.target.value }))}
             min="0"
             step="0.01"
-            className="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-xl text-sm text-[#1C1C1E] focus:outline-none focus:ring-2 focus:ring-[#0071E3]/20 focus:border-[#0071E3] transition-all"
+            className="w-full pl-10 pr-4 py-4 bg-white border-2 border-gray-200 rounded-xl text-base text-[#1C1C1E] focus:outline-none focus:ring-2 focus:ring-[#0071E3]/20 focus:border-[#0071E3] transition-all"
             placeholder="0.00"
           />
         </div>
+        <p className="mt-2 text-xs text-[#8E8E93] font-light">
+          This is the fixed price guests will pay for your listing (USD)
+        </p>
       </div>
     </div>
   );
@@ -1974,7 +1960,7 @@ const Discounts = ({ formData, setFormData }) => {
             <button
               type="button"
               onClick={generatePromoCode}
-              className="px-6 py-3 bg-[#FF9500] text-white rounded-xl text-sm font-medium hover:bg-[#E08500] transition-colors"
+              className="px-6 py-3 bg-[#0071E3] text-white rounded-xl text-sm font-medium hover:bg-[#0051D0] transition-colors"
             >
               Generate
             </button>
@@ -2098,7 +2084,7 @@ const Qualification = ({ formData, setFormData }) => {
                 onClick={() => toggleQualification(qual)}
                 className={`p-4 rounded-xl border-2 transition-all duration-200 text-left ${
                   (formData.qualifications || []).includes(qual)
-                    ? "border-[#FF9500] bg-[#FF9500]/5"
+                    ? "border-[#0071E3] bg-[#0071E3]/5"
                     : "border-gray-200 hover:border-gray-300"
                 }`}
               >
@@ -2232,7 +2218,7 @@ const Itinerary = ({ formData, setFormData }) => {
             type="button"
             onClick={addItineraryItem}
             disabled={!newItem.title.trim()}
-            className="w-full px-6 py-3 bg-[#FF9500] text-white rounded-xl text-sm font-medium hover:bg-[#E08500] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full px-6 py-3 bg-[#0071E3] text-white rounded-xl text-sm font-medium hover:bg-[#0051D0] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Add to Itinerary
           </button>
@@ -2292,7 +2278,7 @@ const BusinessHours = ({ formData, setFormData }) => {
                     type="checkbox"
                     checked={isActive}
                     onChange={() => toggleDay(day)}
-                    className="w-5 h-5 text-[#FF9500] rounded border-gray-300 focus:ring-[#FF9500]"
+                    className="w-5 h-5 text-[#0071E3] rounded border-gray-300 focus:ring-[#0071E3]"
                   />
                   <span className="text-base font-medium text-[#1C1C1E] capitalize">{day}</span>
                 </label>
@@ -2356,7 +2342,7 @@ const Transportation = ({ formData, setFormData }) => {
                   value={option}
                   checked={formData.transportation === option}
                   onChange={(e) => setFormData(prev => ({ ...prev, transportation: e.target.value }))}
-                  className="w-5 h-5 text-[#FF9500] border-gray-300 focus:ring-[#FF9500]"
+                  className="w-5 h-5 text-[#0071E3] border-gray-300 focus:ring-[#0071E3]"
                 />
                 <span className="text-sm font-medium text-[#1C1C1E]">{option}</span>
               </label>
