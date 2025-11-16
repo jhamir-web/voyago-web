@@ -1,8 +1,6 @@
 {
   "version": 2,
-  "functions": {
-    "api/payout.js": {
-      "runtime": "nodejs18.x"
-    }
-  }
+  "buildCommand": "echo 'No build needed - API only'",
+  "outputDirectory": ".",
+  "framework": null
 }
