@@ -13,6 +13,122 @@ import NotesModal from "../../components/NotesModal";
 import FeePreviewModal from "../../components/FeePreviewModal";
 import Toast from "../../components/Toast";
 
+// Review Analytics Report Generation Function (moved outside component for accessibility)
+const generateReviewAnalyticsReport = (data, filters = null) => {
+  // Filter reviews
+  let filteredReviews = data.reviews || [];
+  
+  // Only include approved reviews
+  filteredReviews = filteredReviews.filter(r => r.status === "approved");
+  
+  // Create listing to host mapping
+  const listingToHost = {};
+  (data.listings || []).forEach(listing => {
+    if (listing.hostId) {
+      listingToHost[listing.id] = listing.hostId;
+    }
+  });
+  
+  // Apply listing filter
+  if (filters?.listingId) {
+    filteredReviews = filteredReviews.filter(r => r.listingId === filters.listingId);
+  }
+  
+  // Apply host filter
+  if (filters?.hostId) {
+    filteredReviews = filteredReviews.filter(r => {
+      const hostId = listingToHost[r.listingId];
+      return hostId === filters.hostId;
+    });
+  }
+  
+  if (filteredReviews.length === 0) {
+    return {
+      title: "Review Analytics Report",
+      generatedAt: new Date().toLocaleString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric', 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      }),
+      filters: {
+        listingId: filters?.listingId || null,
+        hostId: filters?.hostId || null
+      },
+      summary: {
+        totalReviews: 0,
+        totalListings: 0
+      },
+      bestReviews: [],
+      lowestReviews: []
+    };
+  }
+  
+  // Group reviews by listingId and calculate average rating per listing
+  const listingRatings = {};
+  filteredReviews.forEach(review => {
+    if (!listingRatings[review.listingId]) {
+      listingRatings[review.listingId] = {
+        listingId: review.listingId,
+        listingTitle: review.listingTitle || "Unknown Listing",
+        ratings: [],
+        totalRating: 0,
+        count: 0
+      };
+    }
+    listingRatings[review.listingId].ratings.push(review.rating || 0);
+    listingRatings[review.listingId].totalRating += review.rating || 0;
+    listingRatings[review.listingId].count += 1;
+  });
+  
+  // Calculate average for each listing
+  const listingsWithAvg = Object.values(listingRatings).map(listing => ({
+    ...listing,
+    averageRating: listing.totalRating / listing.count
+  }));
+  
+  // Sort by average rating
+  const sorted = listingsWithAvg.sort((a, b) => b.averageRating - a.averageRating);
+  
+  // Get top 10 best and bottom 10 lowest (for report, show more than dashboard)
+  const bestReviews = sorted.slice(0, 10);
+  const lowestReviews = sorted.slice(-10).reverse();
+  
+  // Calculate overall statistics
+  const totalAverageRating = filteredReviews.reduce((sum, r) => sum + (r.rating || 0), 0) / filteredReviews.length;
+  const ratingDistribution = {
+    5: filteredReviews.filter(r => r.rating === 5).length,
+    4: filteredReviews.filter(r => r.rating === 4).length,
+    3: filteredReviews.filter(r => r.rating === 3).length,
+    2: filteredReviews.filter(r => r.rating === 2).length,
+    1: filteredReviews.filter(r => r.rating === 1).length
+  };
+  
+  return {
+    title: "Review Analytics Report",
+    generatedAt: new Date().toLocaleString('en-US', { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric', 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    }),
+      filters: {
+        listingId: filters?.listingId || null,
+        hostId: filters?.hostId || null
+      },
+      summary: {
+        totalReviews: filteredReviews.length,
+        totalListings: Object.keys(listingRatings).length,
+        overallAverageRating: totalAverageRating,
+        ratingDistribution
+      },
+    bestReviews,
+    lowestReviews
+  };
+};
+
 const AdminDashboard = () => {
   const { currentUser, userRole, loading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -831,6 +947,39 @@ const GuestReviewsCard = ({ stats }) => {
   const [bestReviews, setBestReviews] = useState([]);
   const [lowestReviews, setLowestReviews] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [listings, setListings] = useState([]);
+  const [hosts, setHosts] = useState([]);
+  const [selectedListing, setSelectedListing] = useState("");
+  const [selectedHost, setSelectedHost] = useState("");
+  const [generating, setGenerating] = useState(false);
+
+  // Fetch listings and hosts for filters
+  useEffect(() => {
+    const fetchFilterData = async () => {
+      try {
+        const [listingsSnapshot, usersSnapshot] = await Promise.all([
+          getDocs(collection(db, "listings")),
+          getDocs(collection(db, "users"))
+        ]);
+        
+        const allListings = listingsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const allUsers = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        setListings(allListings);
+        
+        // Filter hosts
+        const hostUsers = allUsers.filter(u => {
+          const roles = u.roles || (u.role ? [u.role] : []);
+          return roles.includes("host");
+        });
+        setHosts(hostUsers);
+      } catch (error) {
+        console.error("Error fetching filter data:", error);
+      }
+    };
+    
+    fetchFilterData();
+  }, []);
 
   useEffect(() => {
     const fetchReviewAnalytics = async () => {
@@ -884,6 +1033,287 @@ const GuestReviewsCard = ({ stats }) => {
     fetchReviewAnalytics();
   }, [stats]);
 
+  const handleGenerateReviewReport = async () => {
+    try {
+      setGenerating(true);
+      
+      // Fetch all data needed for report
+      const [listingsSnapshot, reviewsSnapshot] = await Promise.all([
+        getDocs(collection(db, "listings")),
+        getDocs(collection(db, "reviews"))
+      ]);
+      
+      const allListings = listingsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const allReviews = reviewsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      // Create a mapping of listingId to hostId
+      const listingToHost = {};
+      allListings.forEach(listing => {
+        if (listing.hostId) {
+          listingToHost[listing.id] = listing.hostId;
+        }
+      });
+      
+      // Prepare data object
+      const data = {
+        reviews: allReviews,
+        listings: allListings
+      };
+      
+      // Apply filters
+      const filters = {
+        listingId: selectedListing || null,
+        hostId: selectedHost || null
+      };
+      
+      // Generate report
+      const report = generateReviewAnalyticsReport(data, filters);
+      
+      // Download PDF - need to access the downloadReport function from parent scope
+      // We'll define it locally or access it from window/context
+      const pdf = new jsPDF();
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 20;
+      let yPosition = margin;
+      const lineHeight = 7;
+      const sectionSpacing = 15;
+      
+      // Colors
+      const navyBlue = [30, 41, 59];
+      const royalBlue = [59, 130, 246];
+      const textDark = [30, 41, 59];
+      const textMedium = [100, 116, 139];
+      const textLight = [148, 163, 184];
+      const white = [255, 255, 255];
+      const borderGray = [226, 232, 240];
+      
+      // Helper function to check page break
+      const checkPageBreak = (requiredSpace) => {
+        if (yPosition + requiredSpace > pageHeight - margin) {
+          pdf.addPage();
+          yPosition = margin;
+        }
+      };
+      
+      // Title
+      pdf.setFontSize(20);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...navyBlue);
+      pdf.text(report.title, margin, yPosition);
+      yPosition += 10;
+      
+      // Generated at and date range
+      pdf.setFontSize(9);
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...textMedium);
+      pdf.text(`Generated: ${report.generatedAt}`, margin, yPosition);
+      yPosition += 5;
+      
+      if (report.dateRange && report.dateRange.start && report.dateRange.end) {
+        const startDate = new Date(report.dateRange.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        const endDate = new Date(report.dateRange.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        pdf.text(`Date Range: ${startDate} - ${endDate}`, margin, yPosition);
+        yPosition += 5;
+      }
+      
+      // Filter info
+      if (report.filters) {
+        const filterTexts = [];
+        if (report.filters.listingId) {
+          const listing = data.listings.find(l => l.id === report.filters.listingId);
+          filterTexts.push(`Listing: ${listing?.title || "Unknown"}`);
+        }
+        if (report.filters.hostId) {
+          const host = hosts.find(h => h.id === report.filters.hostId);
+          filterTexts.push(`Host: ${host?.name || host?.email || "Unknown"}`);
+        }
+        if (filterTexts.length > 0) {
+          pdf.text(`Filters: ${filterTexts.join(", ")}`, margin, yPosition);
+          yPosition += 5;
+        }
+      }
+      
+      yPosition += 5;
+      
+      // Summary box
+      let summaryBoxHeight = 20;
+      summaryBoxHeight += 10;
+      summaryBoxHeight += (lineHeight + 2) * 3;
+      summaryBoxHeight += 5;
+      summaryBoxHeight += (lineHeight + 1) * 5;
+      summaryBoxHeight += 5;
+      
+      pdf.setFillColor(...white);
+      pdf.setDrawColor(...borderGray);
+      pdf.setLineWidth(0.5);
+      pdf.roundedRect(margin, yPosition - 8, pageWidth - (margin * 2), summaryBoxHeight, 4, 4, "FD");
+      
+      pdf.setFillColor(255, 204, 0);
+      pdf.rect(margin, yPosition - 8, 4, summaryBoxHeight, "F");
+      
+      pdf.setFontSize(15);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...navyBlue);
+      pdf.text("Review Analytics Summary", margin + 12, yPosition + 3);
+      
+      pdf.setDrawColor(255, 204, 0);
+      pdf.setLineWidth(0.8);
+      pdf.line(margin + 12, yPosition + 5, margin + 150, yPosition + 5);
+      
+      yPosition += 12;
+      
+      pdf.setFontSize(10);
+      pdf.setFont("helvetica", "normal");
+      const valueX = pageWidth - margin - 12;
+      
+      pdf.setTextColor(...textDark);
+      pdf.text(`Total Reviews:`, margin + 12, yPosition);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...royalBlue);
+      pdf.text((report.summary?.totalReviews || 0).toString(), valueX, yPosition, { align: "right" });
+      yPosition += lineHeight + 2;
+      
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...textDark);
+      pdf.text(`Total Listings Reviewed:`, margin + 12, yPosition);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...royalBlue);
+      pdf.text((report.summary?.totalListings || 0).toString(), valueX, yPosition, { align: "right" });
+      yPosition += lineHeight + 2;
+      
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...textDark);
+      pdf.text(`Overall Average Rating:`, margin + 12, yPosition);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...royalBlue);
+      pdf.text((report.summary?.overallAverageRating || 0).toFixed(2), valueX, yPosition, { align: "right" });
+      yPosition += lineHeight + 3;
+      
+      pdf.setDrawColor(255, 204, 0);
+      pdf.setLineWidth(0.5);
+      pdf.line(margin + 12, yPosition - 2, pageWidth - margin - 12, yPosition - 2);
+      yPosition += 5;
+      
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(9);
+      pdf.setTextColor(...textDark);
+      pdf.text("Rating Distribution:", margin + 12, yPosition);
+      yPosition += lineHeight + 1;
+      
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...textMedium);
+      const dist = report.summary?.ratingDistribution || {};
+      pdf.text(`5 Stars: ${dist[5] || 0}`, margin + 18, yPosition);
+      yPosition += lineHeight + 1;
+      pdf.text(`4 Stars: ${dist[4] || 0}`, margin + 18, yPosition);
+      yPosition += lineHeight + 1;
+      pdf.text(`3 Stars: ${dist[3] || 0}`, margin + 18, yPosition);
+      yPosition += lineHeight + 1;
+      pdf.text(`2 Stars: ${dist[2] || 0}`, margin + 18, yPosition);
+      yPosition += lineHeight + 1;
+      pdf.text(`1 Star: ${dist[1] || 0}`, margin + 18, yPosition);
+      yPosition += lineHeight + 5;
+      
+      yPosition += sectionSpacing + 10;
+      
+      // Best Reviews Table
+      if (report.bestReviews && report.bestReviews.length > 0) {
+        checkPageBreak(50);
+        pdf.setFontSize(16);
+        pdf.setFont("helvetica", "bold");
+        pdf.setTextColor(...navyBlue);
+        pdf.text("Best Rated Listings", margin, yPosition);
+        yPosition += 12;
+        
+        pdf.setFillColor(...navyBlue);
+        pdf.roundedRect(margin, yPosition - 7, pageWidth - (margin * 2), 12, 3, 3, "F");
+        pdf.setFont("helvetica", "bold");
+        pdf.setTextColor(...white);
+        pdf.setFontSize(9);
+        pdf.text("Rank", margin + 6, yPosition);
+        pdf.text("Listing Title", margin + 25, yPosition);
+        pdf.text("Rating", pageWidth - margin - 40, yPosition, { align: "right" });
+        pdf.text("Reviews", pageWidth - margin - 5, yPosition, { align: "right" });
+        yPosition += 14;
+        pdf.setFont("helvetica", "normal");
+        
+        report.bestReviews.forEach((listing, index) => {
+          checkPageBreak(12);
+          pdf.setFillColor(240, 253, 244);
+          pdf.setDrawColor(187, 247, 208);
+          pdf.setLineWidth(0.3);
+          pdf.roundedRect(margin, yPosition - 6, pageWidth - (margin * 2), lineHeight + 3, 2, 2, "FD");
+          
+          pdf.setTextColor(...textDark);
+          pdf.setFontSize(9);
+          pdf.text(`#${index + 1}`, margin + 6, yPosition);
+          pdf.text(listing.listingTitle || "Unknown", margin + 25, yPosition);
+          pdf.setFont("helvetica", "bold");
+          pdf.setTextColor(34, 197, 94);
+          pdf.text(listing.averageRating.toFixed(1), pageWidth - margin - 40, yPosition, { align: "right" });
+          pdf.setFont("helvetica", "normal");
+          pdf.setTextColor(...textMedium);
+          pdf.text(`${listing.count}`, pageWidth - margin - 5, yPosition, { align: "right" });
+          yPosition += lineHeight + 4;
+        });
+        
+        yPosition += 10;
+      }
+      
+      // Lowest Reviews Table
+      if (report.lowestReviews && report.lowestReviews.length > 0) {
+        checkPageBreak(50);
+        pdf.setFontSize(16);
+        pdf.setFont("helvetica", "bold");
+        pdf.setTextColor(...navyBlue);
+        pdf.text("Lowest Rated Listings", margin, yPosition);
+        yPosition += 12;
+        
+        pdf.setFillColor(...navyBlue);
+        pdf.roundedRect(margin, yPosition - 7, pageWidth - (margin * 2), 12, 3, 3, "F");
+        pdf.setFont("helvetica", "bold");
+        pdf.setTextColor(...white);
+        pdf.setFontSize(9);
+        pdf.text("Rank", margin + 6, yPosition);
+        pdf.text("Listing Title", margin + 25, yPosition);
+        pdf.text("Rating", pageWidth - margin - 40, yPosition, { align: "right" });
+        pdf.text("Reviews", pageWidth - margin - 5, yPosition, { align: "right" });
+        yPosition += 14;
+        pdf.setFont("helvetica", "normal");
+        
+        report.lowestReviews.forEach((listing, index) => {
+          checkPageBreak(12);
+          pdf.setFillColor(254, 242, 242);
+          pdf.setDrawColor(254, 202, 202);
+          pdf.setLineWidth(0.3);
+          pdf.roundedRect(margin, yPosition - 6, pageWidth - (margin * 2), lineHeight + 3, 2, 2, "FD");
+          
+          pdf.setTextColor(...textDark);
+          pdf.setFontSize(9);
+          pdf.text(`#${index + 1}`, margin + 6, yPosition);
+          pdf.text(listing.listingTitle || "Unknown", margin + 25, yPosition);
+          pdf.setFont("helvetica", "bold");
+          pdf.setTextColor(220, 38, 38);
+          pdf.text(listing.averageRating.toFixed(1), pageWidth - margin - 40, yPosition, { align: "right" });
+          pdf.setFont("helvetica", "normal");
+          pdf.setTextColor(...textMedium);
+          pdf.text(`${listing.count}`, pageWidth - margin - 5, yPosition, { align: "right" });
+          yPosition += lineHeight + 4;
+        });
+      }
+      
+      // Save PDF
+      pdf.save(`${report.title.replace(/\s+/g, "_")}_${new Date().toISOString().split('T')[0]}.pdf`);
+      alert("Review Analytics Report generated and downloaded successfully!");
+    } catch (error) {
+      console.error("Error generating report:", error);
+      alert("Error generating report: " + error.message);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   if (loading) {
   return (
       <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 animate-fadeInUp">
@@ -896,16 +1326,79 @@ const GuestReviewsCard = ({ stats }) => {
 
   return (
     <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 animate-fadeInUp">
-      <div className="flex items-center gap-4 mb-8">
-        <div className="w-12 h-12 rounded-xl bg-[#FFCC00]/10 flex items-center justify-center text-[#FF9500]">
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+      <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-[#FFCC00]/10 flex items-center justify-center text-[#FF9500]">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="text-xl font-light text-[#1C1C1E] mb-1">Review Analytics</h3>
+            <p className="text-sm text-[#8E8E93] font-light">Best and lowest rated listings</p>
+          </div>
+        </div>
+        <button
+          onClick={handleGenerateReviewReport}
+          disabled={generating}
+          className="bg-gradient-to-r from-yellow-500 to-yellow-600 text-white rounded-xl px-6 py-3 flex items-center gap-3 hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
+          <span className="font-light">{generating ? "Generating..." : "Generate Report"}</span>
+        </button>
+      </div>
+
+      {/* Filters */}
+      <div className="mb-6 p-4 bg-gray-50 rounded-xl border border-gray-200">
+        <h4 className="text-sm font-medium text-[#1C1C1E] mb-3">Report Filters</h4>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Listing Filter */}
+          <div>
+            <label className="block text-xs text-[#8E8E93] mb-2">Filter by Listing</label>
+            <select
+              value={selectedListing}
+              onChange={(e) => setSelectedListing(e.target.value)}
+              className="w-full px-4 py-2 rounded-lg border border-gray-300 bg-white text-sm text-[#1C1C1E] focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
+            >
+              <option value="">All Listings</option>
+              {listings.map(listing => (
+                <option key={listing.id} value={listing.id}>
+                  {listing.title || "Untitled Listing"}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Host Filter */}
+          <div>
+            <label className="block text-xs text-[#8E8E93] mb-2">Filter by Host</label>
+            <select
+              value={selectedHost}
+              onChange={(e) => setSelectedHost(e.target.value)}
+              className="w-full px-4 py-2 rounded-lg border border-gray-300 bg-white text-sm text-[#1C1C1E] focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
+            >
+              <option value="">All Hosts</option>
+              {hosts.map(host => (
+                <option key={host.id} value={host.id}>
+                  {host.name || host.email || "Unknown Host"}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
-        <div>
-          <h3 className="text-xl font-light text-[#1C1C1E] mb-1">Review Analytics</h3>
-          <p className="text-sm text-[#8E8E93] font-light">Best and lowest rated listings</p>
-        </div>
+        {(selectedListing || selectedHost) && (
+          <button
+            onClick={() => {
+              setSelectedListing("");
+              setSelectedHost("");
+            }}
+            className="mt-3 text-xs text-[#8E8E93] hover:text-[#1C1C1E] underline"
+          >
+            Clear Filters
+          </button>
+        )}
       </div>
 
       {bestReviews.length === 0 && lowestReviews.length === 0 ? (
@@ -2450,6 +2943,81 @@ const ReportsContent = () => {
     };
   };
 
+  const generateFinancialMetricsReport = (data, dateRange = null) => {
+    // Filter bookings by date range if provided
+    let filteredBookings = data.bookings || [];
+    let filteredWithdrawals = data.withdrawals || [];
+    
+    if (dateRange && dateRange.start && dateRange.end) {
+      const startDate = new Date(dateRange.start);
+      const endDate = new Date(dateRange.end);
+      endDate.setHours(23, 59, 59, 999); // Include entire end date
+      
+      filteredBookings = filteredBookings.filter(b => {
+        const bookingDate = b.createdAt ? new Date(b.createdAt) : null;
+        if (!bookingDate) return false;
+        return bookingDate >= startDate && bookingDate <= endDate;
+      });
+      
+      filteredWithdrawals = filteredWithdrawals.filter(w => {
+        const withdrawalDate = w.processedAt 
+          ? new Date(w.processedAt) 
+          : (w.requestedAt ? new Date(w.requestedAt) : null);
+        if (!withdrawalDate) return false;
+        return withdrawalDate >= startDate && withdrawalDate <= endDate;
+      });
+    }
+    
+    // Calculate Gross Revenue: All confirmed bookings
+    const grossRevenue = filteredBookings
+      .filter(b => b.status === "confirmed")
+      .reduce((sum, b) => {
+        const price = parseFloat(b.totalPrice) || 0;
+        return sum + price;
+      }, 0);
+    
+    // Platform Revenue: 7% of gross revenue
+    const serviceFeePercentage = 0.07;
+    const platformRevenue = grossRevenue * serviceFeePercentage;
+    
+    // Host Payouts: Sum of all completed withdrawal amounts
+    const hostPayouts = filteredWithdrawals
+      .filter(w => w.status === "completed")
+      .reduce((sum, w) => {
+        const amount = parseFloat(w.amount) || 0;
+        return sum + amount;
+      }, 0);
+    
+    // Additional metrics
+    const totalConfirmedBookings = filteredBookings.filter(b => b.status === "confirmed").length;
+    const totalCompletedWithdrawals = filteredWithdrawals.filter(w => w.status === "completed").length;
+    const averageBookingValue = totalConfirmedBookings > 0 ? grossRevenue / totalConfirmedBookings : 0;
+    const averageWithdrawalAmount = totalCompletedWithdrawals > 0 ? hostPayouts / totalCompletedWithdrawals : 0;
+    
+    return {
+      title: "Financial Metrics Report",
+      generatedAt: new Date().toLocaleString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric', 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      }),
+      dateRange: dateRange,
+      summary: {
+        grossRevenue,
+        platformRevenue,
+        hostPayouts,
+        serviceFeePercentage: serviceFeePercentage * 100, // Convert to percentage
+        totalConfirmedBookings,
+        totalCompletedWithdrawals,
+        averageBookingValue,
+        averageWithdrawalAmount
+      }
+    };
+  };
+
+
   const downloadReport = (report, reportType) => {
     const pdf = new jsPDF();
     const pageWidth = pdf.internal.pageSize.getWidth();
@@ -2736,6 +3304,204 @@ const ReportsContent = () => {
       pdf.text(`Total Guests:`, margin + 12, yPosition);
       pdf.setTextColor(...textMedium);
       pdf.text(report.summary.totalGuests.toString(), margin + 75, yPosition);
+    } else if (reportType === "Financial Metrics Report") {
+      // Draw summary box for Financial Metrics Report
+      const formatCurrency = (amount) => {
+        const numAmount = parseFloat(amount) || 0;
+        return new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: 'USD',
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        }).format(numAmount);
+      };
+
+      // Calculate summary box height
+      let summaryBoxHeight = 20; // Base height for title
+      summaryBoxHeight += 10; // Title spacing
+      summaryBoxHeight += (lineHeight + 2) * 3; // 3 main metrics (Gross Revenue, Platform Revenue, Host Payouts)
+      summaryBoxHeight += 5; // Divider spacing
+      summaryBoxHeight += (lineHeight + 2) * 4; // Additional metrics
+      summaryBoxHeight += 5; // Bottom padding
+      
+      // Draw summary box
+      pdf.setFillColor(...white);
+      pdf.setDrawColor(...borderGray);
+      pdf.setLineWidth(0.5);
+      pdf.roundedRect(margin, yPosition - 8, pageWidth - (margin * 2), summaryBoxHeight, 4, 4, "FD");
+      
+      // Green accent bar on left side
+      pdf.setFillColor(...royalBlue);
+      pdf.rect(margin, yPosition - 8, 4, summaryBoxHeight, "F");
+      
+      // Section title
+      pdf.setFontSize(15);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...navyBlue);
+      pdf.text("Financial Metrics Summary", margin + 12, yPosition + 3);
+      
+      // Subtle underline
+      pdf.setDrawColor(...royalBlue);
+      pdf.setLineWidth(0.8);
+      pdf.line(margin + 12, yPosition + 5, margin + 150, yPosition + 5);
+      
+      yPosition += 12;
+      
+      pdf.setFontSize(10);
+      pdf.setFont("helvetica", "normal");
+      const valueX = pageWidth - margin - 12;
+      
+      // Gross Revenue
+      pdf.setTextColor(...textDark);
+      pdf.text(`Gross Revenue:`, margin + 12, yPosition);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...royalBlue);
+      pdf.text(formatCurrency(report.summary?.grossRevenue || 0), valueX, yPosition, { align: "right" });
+      yPosition += lineHeight + 2;
+      
+      // Platform Revenue
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...textDark);
+      pdf.text(`Platform Revenue (${report.summary?.serviceFeePercentage || 7}%):`, margin + 12, yPosition);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...royalBlue);
+      pdf.text(formatCurrency(report.summary?.platformRevenue || 0), valueX, yPosition, { align: "right" });
+      yPosition += lineHeight + 2;
+      
+      // Host Payouts
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...textDark);
+      pdf.text(`Host Payouts:`, margin + 12, yPosition);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...royalBlue);
+      pdf.text(formatCurrency(report.summary?.hostPayouts || 0), valueX, yPosition, { align: "right" });
+      yPosition += lineHeight + 3;
+      
+      // Divider
+      pdf.setDrawColor(...royalBlue);
+      pdf.setLineWidth(0.5);
+      pdf.line(margin + 12, yPosition - 2, pageWidth - margin - 12, yPosition - 2);
+      yPosition += 5;
+      
+      // Additional metrics
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(9);
+      pdf.setTextColor(...textMedium);
+      
+      pdf.text(`Total Confirmed Bookings: ${report.summary?.totalConfirmedBookings || 0}`, margin + 12, yPosition);
+      yPosition += lineHeight + 2;
+      
+      pdf.text(`Total Completed Withdrawals: ${report.summary?.totalCompletedWithdrawals || 0}`, margin + 12, yPosition);
+      yPosition += lineHeight + 2;
+      
+      pdf.text(`Average Booking Value: ${formatCurrency(report.summary?.averageBookingValue || 0)}`, margin + 12, yPosition);
+      yPosition += lineHeight + 2;
+      
+      pdf.text(`Average Withdrawal Amount: ${formatCurrency(report.summary?.averageWithdrawalAmount || 0)}`, margin + 12, yPosition);
+      yPosition += lineHeight + 5;
+      
+      pdf.setFontSize(10);
+    } else if (reportType === "Review Analytics Report") {
+      // Draw summary box for Review Analytics Report
+      const formatCurrency = (amount) => {
+        const numAmount = parseFloat(amount) || 0;
+        return new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: 'USD',
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        }).format(numAmount);
+      };
+
+      // Calculate summary box height
+      let summaryBoxHeight = 20; // Base height for title
+      summaryBoxHeight += 10; // Title spacing
+      summaryBoxHeight += (lineHeight + 2) * 3; // Main stats
+      summaryBoxHeight += 5; // Divider spacing
+      summaryBoxHeight += (lineHeight + 1) * 5; // Rating distribution
+      summaryBoxHeight += 5; // Bottom padding
+      
+      // Draw summary box
+      pdf.setFillColor(...white);
+      pdf.setDrawColor(...borderGray);
+      pdf.setLineWidth(0.5);
+      pdf.roundedRect(margin, yPosition - 8, pageWidth - (margin * 2), summaryBoxHeight, 4, 4, "FD");
+      
+      // Yellow accent bar on left side
+      pdf.setFillColor(255, 204, 0); // #FFCC00
+      pdf.rect(margin, yPosition - 8, 4, summaryBoxHeight, "F");
+      
+      // Section title
+      pdf.setFontSize(15);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...navyBlue);
+      pdf.text("Review Analytics Summary", margin + 12, yPosition + 3);
+      
+      // Subtle underline
+      pdf.setDrawColor(255, 204, 0);
+      pdf.setLineWidth(0.8);
+      pdf.line(margin + 12, yPosition + 5, margin + 150, yPosition + 5);
+      
+      yPosition += 12;
+      
+      pdf.setFontSize(10);
+      pdf.setFont("helvetica", "normal");
+      const valueX = pageWidth - margin - 12;
+      
+      // Total Reviews
+      pdf.setTextColor(...textDark);
+      pdf.text(`Total Reviews:`, margin + 12, yPosition);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...royalBlue);
+      pdf.text((report.summary?.totalReviews || 0).toString(), valueX, yPosition, { align: "right" });
+      yPosition += lineHeight + 2;
+      
+      // Total Listings
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...textDark);
+      pdf.text(`Total Listings Reviewed:`, margin + 12, yPosition);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...royalBlue);
+      pdf.text((report.summary?.totalListings || 0).toString(), valueX, yPosition, { align: "right" });
+      yPosition += lineHeight + 2;
+      
+      // Overall Average Rating
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...textDark);
+      pdf.text(`Overall Average Rating:`, margin + 12, yPosition);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...royalBlue);
+      pdf.text((report.summary?.overallAverageRating || 0).toFixed(2), valueX, yPosition, { align: "right" });
+      yPosition += lineHeight + 3;
+      
+      // Divider
+      pdf.setDrawColor(255, 204, 0);
+      pdf.setLineWidth(0.5);
+      pdf.line(margin + 12, yPosition - 2, pageWidth - margin - 12, yPosition - 2);
+      yPosition += 5;
+      
+      // Rating Distribution
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(9);
+      pdf.setTextColor(...textDark);
+      pdf.text("Rating Distribution:", margin + 12, yPosition);
+      yPosition += lineHeight + 1;
+      
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...textMedium);
+      const dist = report.summary?.ratingDistribution || {};
+      pdf.text(`5 Stars: ${dist[5] || 0}`, margin + 18, yPosition);
+      yPosition += lineHeight + 1;
+      pdf.text(`4 Stars: ${dist[4] || 0}`, margin + 18, yPosition);
+      yPosition += lineHeight + 1;
+      pdf.text(`3 Stars: ${dist[3] || 0}`, margin + 18, yPosition);
+      yPosition += lineHeight + 1;
+      pdf.text(`2 Stars: ${dist[2] || 0}`, margin + 18, yPosition);
+      yPosition += lineHeight + 1;
+      pdf.text(`1 Star: ${dist[1] || 0}`, margin + 18, yPosition);
+      yPosition += lineHeight + 5;
+      
+      pdf.setFontSize(10);
     } else if (reportType === "Listing Performance Report") {
       // Draw summary box for Listing Performance Report
       const listingSummaryHeight = 50;
@@ -2777,8 +3543,114 @@ const ReportsContent = () => {
     yPosition += sectionSpacing + 10;
 
     // Detailed Data Section
-    // Transactions Table for Financial Report
-    if (reportType === "Financial Report" && report.transactions && report.transactions.length > 0) {
+    // Transactions Table for Financial Report (skip for Financial Metrics Report)
+    if (reportType === "Financial Metrics Report") {
+      // Financial Metrics Report is summary-only, no table needed
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(9);
+      pdf.setTextColor(...textMedium);
+      pdf.text("This report provides a summary of key financial metrics for the selected period.", margin, yPosition);
+      yPosition += lineHeight + 5;
+    } else if (reportType === "Review Analytics Report") {
+      // Best Reviews Table
+      if (report.bestReviews && report.bestReviews.length > 0) {
+        checkPageBreak(50);
+        pdf.setFontSize(16);
+        pdf.setFont("helvetica", "bold");
+        pdf.setTextColor(...navyBlue);
+        pdf.text("Best Rated Listings", margin, yPosition);
+        yPosition += 12;
+        
+        // Table header
+        pdf.setFillColor(...navyBlue);
+        pdf.roundedRect(margin, yPosition - 7, pageWidth - (margin * 2), 12, 3, 3, "F");
+        pdf.setFont("helvetica", "bold");
+        pdf.setTextColor(...white);
+        pdf.setFontSize(9);
+        pdf.text("Rank", margin + 6, yPosition);
+        pdf.text("Listing Title", margin + 25, yPosition);
+        pdf.text("Rating", pageWidth - margin - 40, yPosition, { align: "right" });
+        pdf.text("Reviews", pageWidth - margin - 5, yPosition, { align: "right" });
+        yPosition += 14;
+        pdf.setFont("helvetica", "normal");
+        
+        report.bestReviews.forEach((listing, index) => {
+          checkPageBreak(12);
+          
+          // Green background for best reviews
+          pdf.setFillColor(240, 253, 244); // green-50
+          pdf.setDrawColor(187, 247, 208); // green-200
+          pdf.setLineWidth(0.3);
+          pdf.roundedRect(margin, yPosition - 6, pageWidth - (margin * 2), lineHeight + 3, 2, 2, "FD");
+          
+          pdf.setTextColor(...textDark);
+          pdf.setFontSize(9);
+          pdf.text(`#${index + 1}`, margin + 6, yPosition);
+          pdf.text(listing.listingTitle || "Unknown", margin + 25, yPosition);
+          pdf.setFont("helvetica", "bold");
+          pdf.setTextColor(34, 197, 94); // green-600
+          pdf.text(listing.averageRating.toFixed(1), pageWidth - margin - 40, yPosition, { align: "right" });
+          pdf.setFont("helvetica", "normal");
+          pdf.setTextColor(...textMedium);
+          pdf.text(`${listing.count}`, pageWidth - margin - 5, yPosition, { align: "right" });
+          yPosition += lineHeight + 4;
+        });
+        
+        yPosition += 10;
+      }
+      
+      // Lowest Reviews Table
+      if (report.lowestReviews && report.lowestReviews.length > 0) {
+        checkPageBreak(50);
+        pdf.setFontSize(16);
+        pdf.setFont("helvetica", "bold");
+        pdf.setTextColor(...navyBlue);
+        pdf.text("Lowest Rated Listings", margin, yPosition);
+        yPosition += 12;
+        
+        // Table header
+        pdf.setFillColor(...navyBlue);
+        pdf.roundedRect(margin, yPosition - 7, pageWidth - (margin * 2), 12, 3, 3, "F");
+        pdf.setFont("helvetica", "bold");
+        pdf.setTextColor(...white);
+        pdf.setFontSize(9);
+        pdf.text("Rank", margin + 6, yPosition);
+        pdf.text("Listing Title", margin + 25, yPosition);
+        pdf.text("Rating", pageWidth - margin - 40, yPosition, { align: "right" });
+        pdf.text("Reviews", pageWidth - margin - 5, yPosition, { align: "right" });
+        yPosition += 14;
+        pdf.setFont("helvetica", "normal");
+        
+        report.lowestReviews.forEach((listing, index) => {
+          checkPageBreak(12);
+          
+          // Red background for lowest reviews
+          pdf.setFillColor(254, 242, 242); // red-50
+          pdf.setDrawColor(254, 202, 202); // red-200
+          pdf.setLineWidth(0.3);
+          pdf.roundedRect(margin, yPosition - 6, pageWidth - (margin * 2), lineHeight + 3, 2, 2, "FD");
+          
+          pdf.setTextColor(...textDark);
+          pdf.setFontSize(9);
+          pdf.text(`#${index + 1}`, margin + 6, yPosition);
+          pdf.text(listing.listingTitle || "Unknown", margin + 25, yPosition);
+          pdf.setFont("helvetica", "bold");
+          pdf.setTextColor(220, 38, 38); // red-600
+          pdf.text(listing.averageRating.toFixed(1), pageWidth - margin - 40, yPosition, { align: "right" });
+          pdf.setFont("helvetica", "normal");
+          pdf.setTextColor(...textMedium);
+          pdf.text(`${listing.count}`, pageWidth - margin - 5, yPosition, { align: "right" });
+          yPosition += lineHeight + 4;
+        });
+      } else if (report.bestReviews && report.bestReviews.length === 0 && report.lowestReviews && report.lowestReviews.length === 0) {
+        checkPageBreak(30);
+        pdf.setFontSize(12);
+        pdf.setFont("helvetica", "normal");
+        pdf.setTextColor(...textMedium);
+        pdf.text("No reviews found for the selected period.", margin, yPosition);
+        yPosition += lineHeight + 5;
+      }
+    } else if (reportType === "Financial Report" && report.transactions && report.transactions.length > 0) {
       checkPageBreak(50);
       
       // Section title with proper spacing
@@ -3165,6 +4037,12 @@ const ReportsContent = () => {
         case "Listing Performance Report":
           report = generateListingPerformanceReport(data, dateRange);
           break;
+        case "Financial Metrics Report":
+          report = generateFinancialMetricsReport(data, dateRange);
+          break;
+        case "Review Analytics Report":
+          report = generateReviewAnalyticsReport(data, dateRange);
+          break;
         default:
           throw new Error("Unknown report type");
       }
@@ -3234,7 +4112,7 @@ const ReportsContent = () => {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <button
             onClick={() => handleGenerateReport("Financial Report")}
             disabled={generating}
@@ -3244,6 +4122,17 @@ const ReportsContent = () => {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
             <span className="text-lg font-light">{generating ? "Generating..." : "Financial Report"}</span>
+          </button>
+
+          <button
+            onClick={() => handleGenerateReport("Financial Metrics Report")}
+            disabled={generating}
+            className="bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-xl p-6 flex items-center gap-4 hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span className="text-lg font-light">{generating ? "Generating..." : "Financial Metrics"}</span>
           </button>
 
           <button
