@@ -967,7 +967,7 @@ const DescribePlace = ({ formData, setFormData }) => {
   return (
     <div className="space-y-6 animate-fadeInUp">
       <div>
-        <h2 className="text-3xl sm:text-4xl font-light text-[#1C1C1E] mb-2">Describe Place</h2>
+      <h2 className="text-3xl sm:text-4xl font-light text-[#1C1C1E] mb-2">Describe Place</h2>
         <p className="text-sm text-[#8E8E93] font-light">Choose how guests will experience your place</p>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -1758,11 +1758,11 @@ const TitleDescription = ({ formData, setFormData }) => {
 const Pricing = ({ formData, setFormData }) => {
   return (
     <div className="space-y-6 animate-fadeInUp">
-      <div>
+        <div>
         <h2 className="text-3xl sm:text-4xl font-light text-[#1C1C1E] mb-2">Set your price</h2>
         <p className="text-sm text-[#8E8E93] font-light">Enter the price for your listing</p>
-      </div>
-      <div>
+        </div>
+        <div>
         <label className="block text-sm font-medium text-[#1C1C1E] mb-3">
           Price <span className="text-red-500">*</span>
         </label>

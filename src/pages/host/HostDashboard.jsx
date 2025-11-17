@@ -216,45 +216,45 @@ const HostDashboard = () => {
       const bookingAmount = booking.totalPrice || 0;
       
       if (newStatus === "confirmed") {
-        // Add to host's pending balance (not actual wallet - money is held by admin)
+        // Add directly to host's wallet balance (money goes directly to host's e-wallet)
         const hostRef = doc(db, "users", booking.hostId);
         const hostDoc = await getDoc(hostRef);
         
         if (hostDoc.exists()) {
           const hostData = hostDoc.data();
-          const currentPendingBalance = hostData.pendingBalance || 0;
+          const currentWalletBalance = hostData.walletBalance || 0;
           const hostTransactions = hostData.transactions || [];
           
           const hostTransaction = {
-            type: "booking_pending",
+            type: "booking_earnings",
             amount: bookingAmount,
             bookingId: bookingId,
             date: new Date().toISOString(),
-            status: "pending", // Pending until withdrawal
-            description: `Pending payment for booking: ${booking.listingTitle || "Booking"}`,
-            withdrawalRequestId: null // Will be set when withdrawal is requested
+            status: "completed",
+            description: `Earnings from booking: ${booking.listingTitle || "Booking"}`,
+            paymentMethod: booking.paymentMethod || "paypal"
           };
           
           await updateDoc(hostRef, {
-            pendingBalance: currentPendingBalance + bookingAmount,
+            walletBalance: currentWalletBalance + bookingAmount,
             transactions: [hostTransaction, ...hostTransactions].slice(0, 10)
           });
         }
         
-        // Record payment to admin (money goes to admin's PayPal)
-        // Note: Actual PayPal transfer to admin would be handled by backend/webhook
-        // For now, we'll track it in a separate collection
+        // Record payment to admin for tracking purposes (PayPal payments go to admin's PayPal)
+        // Note: PayPal payments from guests go to admin's PayPal account
+        // Host receives money directly in their wallet when booking is accepted
         try {
           await addDoc(collection(db, "adminPayments"), {
             bookingId: bookingId,
             hostId: booking.hostId,
             guestId: booking.guestId,
             amount: bookingAmount,
-            status: "received", // Money received by admin
+            status: "received", // Money received by admin via PayPal (if PayPal payment)
             paymentMethod: booking.paymentMethod || "paypal",
             paypalOrderId: booking.paypalOrderId || null,
-            createdAt: serverTimestamp(),
-            withdrawalRequestId: null // Will be set when host requests withdrawal
+            hostWalletCredit: true, // Host has been credited in wallet
+            createdAt: serverTimestamp()
           });
         } catch (error) {
           console.error("Error recording admin payment:", error);
@@ -281,6 +281,25 @@ const HostDashboard = () => {
           await addDoc(collection(db, "messages"), systemMessage);
         } catch (messageError) {
           console.error("Error sending system message:", messageError);
+        }
+
+        // Send booking confirmation email to guest
+        console.log("📧 Starting to send booking confirmation email for booking:", bookingId);
+        try {
+          console.log("📧 Importing sendBookingConfirmationEmail...");
+          const { sendBookingConfirmationEmail } = await import("../../utils/bookingEmails");
+          console.log("📧 Email function imported successfully, calling with bookingId:", bookingId);
+          const emailResult = await sendBookingConfirmationEmail(bookingId);
+          console.log("📧 Email function returned:", emailResult);
+          if (!emailResult.success) {
+            console.error("❌ Failed to send booking confirmation email:", emailResult.error);
+          } else {
+            console.log("✅ Booking confirmation email sent successfully");
+          }
+        } catch (emailError) {
+          console.error("❌ Error sending booking confirmation email:", emailError);
+          console.error("❌ Error stack:", emailError.stack);
+          // Don't block booking confirmation if email fails
         }
       } else if (newStatus === "rejected") {
         // Refund money to guest's wallet
@@ -333,7 +352,7 @@ const HostDashboard = () => {
       
       // Refresh bookings
       await fetchData();
-      alert(`Booking ${actionText === "accept" ? "accepted" : actionText === "reject" ? "rejected" : newStatus} successfully! ${newStatus === "confirmed" ? `$${bookingAmount.toFixed(2)} has been added to your pending balance. Request withdrawal to receive funds.` : newStatus === "rejected" ? `$${bookingAmount.toFixed(2)} has been refunded to the guest.` : ""}`);
+      alert(`Booking ${actionText === "accept" ? "accepted" : actionText === "reject" ? "rejected" : newStatus} successfully! ${newStatus === "confirmed" ? `$${bookingAmount.toFixed(2)} has been added to your wallet balance.` : newStatus === "rejected" ? `$${bookingAmount.toFixed(2)} has been refunded to the guest.` : ""}`);
     } catch (error) {
       console.error("Error updating booking status:", error);
       alert("Failed to update booking status. Please try again.");

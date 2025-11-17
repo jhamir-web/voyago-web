@@ -49,7 +49,6 @@ const AdminSetup = () => {
         emailVerified: false,
         points: 0,
         walletBalance: 0,
-        pendingBalance: 0,
         pointsHistory: [],
         transactions: [],
         isAdmin: true, // Additional flag for admin

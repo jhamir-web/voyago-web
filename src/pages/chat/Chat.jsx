@@ -1224,7 +1224,7 @@ const Chat = () => {
                   : (userData.name || userData.email || "User");
                 const initials = getOtherPartyInitialsFromData(userData);
                 const isSelected = conv.otherUserId === selectedOtherUserId;
-                const userPhoto = userData.profilePhotoUrl || userData.photoURL || null;
+                const userPhoto = userData.photoURL || userData.profilePhotoUrl || null;
 
   return (
           <button
@@ -1292,7 +1292,7 @@ const Chat = () => {
               <div className="p-4 sm:p-6 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                   {(() => {
-                    const otherUserPhoto = otherUserData?.profilePhotoUrl || otherUserData?.photoURL || null;
+                    const otherUserPhoto = otherUserData?.photoURL || otherUserData?.profilePhotoUrl || null;
                     const otherUserInitials = getOtherPartyInitials();
                     return (
                       <>
@@ -1422,7 +1422,7 @@ const Chat = () => {
               }
               
               // Get profile photo for other user
-              const otherUserPhoto = otherUserData?.profilePhotoUrl || otherUserData?.photoURL || null;
+              const otherUserPhoto = otherUserData?.photoURL || otherUserData?.profilePhotoUrl || null;
               const otherUserInitials = getOtherPartyInitials();
               
               return (
@@ -1580,7 +1580,7 @@ const Chat = () => {
               {/* Profile Info */}
               <div className="text-center mb-6">
                 {(() => {
-                  const otherUserPhoto = otherUserData?.profilePhotoUrl || otherUserData?.photoURL || null;
+                  const otherUserPhoto = otherUserData?.photoURL || otherUserData?.profilePhotoUrl || null;
                   const otherUserInitials = getOtherPartyInitials();
                   return (
                     <>

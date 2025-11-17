@@ -28,6 +28,7 @@ const GuestDashboard = () => {
   const [cancellingBookingId, setCancellingBookingId] = useState(null);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [selectedBookingToCancel, setSelectedBookingToCancel] = useState(null);
+  const [currentTime, setCurrentTime] = useState(new Date()); // For countdown timer updates
 
   useEffect(() => {
     // Wait for auth to finish loading before checking
@@ -49,6 +50,15 @@ const GuestDashboard = () => {
 
     fetchBookings();
   }, [currentUser, userRole, userRoles, authLoading, navigate]);
+
+  // Update current time every minute for countdown timer
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 60000); // Update every minute
+
+    return () => clearInterval(timer);
+  }, []);
 
   const fetchBookings = async () => {
     try {
@@ -186,32 +196,70 @@ const GuestDashboard = () => {
     return checkout < today;
   };
 
-  // Check if booking is within 24 hours of check-in
-  const isWithin24Hours = (checkInDate) => {
-    const checkIn = new Date(checkInDate);
-    const now = new Date();
-    const hoursUntilCheckIn = (checkIn - now) / (1000 * 60 * 60);
-    return hoursUntilCheckIn > 0 && hoursUntilCheckIn <= 24;
+  // Check if booking was created within the last 24 hours (cooling off period)
+  // Uses currentTime state to update in real-time
+  const isWithin24HoursOfBooking = (bookingCreatedAt) => {
+    if (!bookingCreatedAt) return false;
+    const bookingCreated = new Date(bookingCreatedAt);
+    const now = currentTime; // Use state instead of new Date() for real-time updates
+    const hoursSinceBooking = (now - bookingCreated) / (1000 * 60 * 60);
+    return hoursSinceBooking > 0 && hoursSinceBooking <= 24;
+  };
+
+  // Calculate time remaining for refund eligibility (in hours and minutes)
+  // Uses currentTime state to update in real-time
+  const getRefundTimeRemaining = (bookingCreatedAt) => {
+    if (!bookingCreatedAt) return null;
+    const bookingCreated = new Date(bookingCreatedAt);
+    const now = currentTime; // Use state instead of new Date() for real-time updates
+    const hoursSinceBooking = (now - bookingCreated) / (1000 * 60 * 60);
+    const hoursRemaining = 24 - hoursSinceBooking;
+    
+    if (hoursRemaining <= 0) return null;
+    
+    const hours = Math.floor(hoursRemaining);
+    const minutes = Math.floor((hoursRemaining - hours) * 60);
+    return { hours, minutes, totalHours: hoursRemaining };
   };
 
   // Calculate refund amount based on cancellation time
+  // 70% refund if cancelled within 24 hours of booking creation, otherwise no refund
   const calculateRefund = (booking) => {
-    if (isWithin24Hours(booking.checkIn)) {
+    if (isWithin24HoursOfBooking(booking.createdAt)) {
       return booking.totalPrice * 0.7; // 70% refund
     }
-    return 0; // No refund after 24 hours
+    return 0; // No refund after 24 hours from booking creation
   };
 
   // Handle booking cancellation
   const handleCancelBooking = async (booking) => {
     if (booking.status === "cancelled") {
+      alert("This booking has already been cancelled.");
+      return;
+    }
+
+    // Validate: Cannot cancel completed bookings
+    if (booking.status === "completed") {
+      alert("Cannot cancel a completed booking.");
+      return;
+    }
+
+    // Validate: Cannot cancel if check-in date has already passed (compare dates only, not time)
+    const checkInDate = new Date(booking.checkIn);
+    checkInDate.setHours(0, 0, 0, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // Only prevent cancellation if check-in date is in the past (yesterday or earlier)
+    if (checkInDate < today) {
+      alert("Cannot cancel a booking after check-in date has passed.");
       return;
     }
 
     const refundAmount = calculateRefund(booking);
     const refundText = refundAmount > 0 
-      ? `You will receive a 70% refund of $${refundAmount.toFixed(2)}.`
-      : "No refund will be issued (cancelled after 24 hours before check-in).";
+      ? `You will receive a 70% refund of $${refundAmount.toFixed(2)} (cancelled within 24 hours of booking).`
+      : "No refund will be issued (cancelled after 24 hours from booking creation).";
 
     if (!window.confirm(`Are you sure you want to cancel this booking?\n\n${refundText}\n\nThis action cannot be undone.`)) {
       return;
@@ -230,6 +278,7 @@ const GuestDashboard = () => {
 
       const bookingData = bookingDoc.data();
       const bookingAmount = bookingData.totalPrice || 0;
+      const serviceFee = refundAmount > 0 ? (bookingAmount - refundAmount) : 0;
 
       // Update booking status
       await updateDoc(bookingRef, {
@@ -237,8 +286,51 @@ const GuestDashboard = () => {
         cancelledAt: new Date().toISOString(),
         cancelledBy: currentUser.uid,
         refundAmount: refundAmount,
+        serviceFeeRetained: serviceFee,
         updatedAt: new Date().toISOString()
       });
+
+      // Update adminPayments record if it exists
+      try {
+        const adminPaymentsQuery = query(
+          collection(db, "adminPayments"),
+          where("bookingId", "==", booking.id)
+        );
+        const adminPaymentsSnapshot = await getDocs(adminPaymentsQuery);
+        
+        if (!adminPaymentsSnapshot.empty) {
+          const adminPaymentDoc = adminPaymentsSnapshot.docs[0];
+          await updateDoc(doc(db, "adminPayments", adminPaymentDoc.id), {
+            status: "cancelled",
+            cancelledAt: new Date().toISOString(),
+            refundAmount: refundAmount,
+            serviceFeeRetained: serviceFee,
+            updatedAt: new Date().toISOString()
+          });
+        }
+      } catch (adminPaymentError) {
+        console.error("Error updating admin payment record:", adminPaymentError);
+        // Don't block cancellation if admin payment update fails
+      }
+
+      // Track service fee as platform revenue if refund was issued
+      if (serviceFee > 0) {
+        try {
+          await addDoc(collection(db, "platformRevenue"), {
+            type: "cancellation_service_fee",
+            bookingId: booking.id,
+            amount: serviceFee,
+            guestId: bookingData.guestId,
+            hostId: bookingData.hostId,
+            description: `Service fee retained from cancelled booking: ${bookingData.listingTitle || "Booking"}`,
+            createdAt: new Date().toISOString(),
+            timestamp: serverTimestamp()
+          });
+        } catch (revenueError) {
+          console.error("Error tracking service fee revenue:", revenueError);
+          // Don't block cancellation if revenue tracking fails
+        }
+      }
 
       // Process refund if applicable
       if (refundAmount > 0) {
@@ -266,17 +358,17 @@ const GuestDashboard = () => {
           });
         }
 
-        // If booking was confirmed, reduce host's pending balance
+        // If booking was confirmed, reduce host's wallet balance
         if (bookingData.status === "confirmed" && bookingData.hostId) {
           const hostRef = doc(db, "users", bookingData.hostId);
           const hostDoc = await getDoc(hostRef);
           
           if (hostDoc.exists()) {
             const hostData = hostDoc.data();
-            const currentPendingBalance = hostData.pendingBalance || 0;
+            const currentWalletBalance = hostData.walletBalance || 0;
             const hostTransactions = hostData.transactions || [];
             
-            // Deduct the full booking amount from host's pending balance
+            // Deduct the full booking amount from host's wallet balance
             const deductionTransaction = {
               type: "booking_cancelled",
               amount: -bookingAmount,
@@ -287,20 +379,20 @@ const GuestDashboard = () => {
             };
             
             await updateDoc(hostRef, {
-              pendingBalance: Math.max(0, currentPendingBalance - bookingAmount),
+              walletBalance: Math.max(0, currentWalletBalance - bookingAmount),
               transactions: [deductionTransaction, ...hostTransactions].slice(0, 10)
             });
           }
         }
       } else {
-        // No refund - still need to update host's pending balance if booking was confirmed
+        // No refund - still need to update host's wallet balance if booking was confirmed
         if (bookingData.status === "confirmed" && bookingData.hostId) {
           const hostRef = doc(db, "users", bookingData.hostId);
           const hostDoc = await getDoc(hostRef);
           
           if (hostDoc.exists()) {
             const hostData = hostDoc.data();
-            const currentPendingBalance = hostData.pendingBalance || 0;
+            const currentWalletBalance = hostData.walletBalance || 0;
             const hostTransactions = hostData.transactions || [];
             
             const deductionTransaction = {
@@ -313,7 +405,7 @@ const GuestDashboard = () => {
             };
             
             await updateDoc(hostRef, {
-              pendingBalance: Math.max(0, currentPendingBalance - bookingAmount),
+              walletBalance: Math.max(0, currentWalletBalance - bookingAmount),
               transactions: [deductionTransaction, ...hostTransactions].slice(0, 10)
             });
           }
@@ -341,6 +433,21 @@ const GuestDashboard = () => {
         await addDoc(collection(db, "messages"), systemMessage);
       } catch (messageError) {
         console.error("Error sending system message:", messageError);
+      }
+
+      // Send booking cancellation email to guest
+      try {
+        const { sendBookingCancellationEmail } = await import("../../utils/bookingEmails");
+        // serviceFee is already calculated above
+        const emailResult = await sendBookingCancellationEmail(booking.id, refundAmount, serviceFee);
+        if (!emailResult.success) {
+          console.error("Failed to send booking cancellation email:", emailResult.error);
+        } else {
+          console.log("✅ Booking cancellation email sent successfully");
+        }
+      } catch (emailError) {
+        console.error("❌ Error sending booking cancellation email:", emailError);
+        // Don't block booking cancellation if email fails
       }
 
       // Refresh bookings
@@ -789,12 +896,34 @@ const GuestDashboard = () => {
                         </button>
 
                         {/* Refund Information */}
-                        <div className="text-xs text-[#8E8E93] font-light text-center px-2 py-1 bg-gray-50 rounded-lg">
-                          {isWithin24Hours(booking.checkIn) ? (
-                            <span>Cancel within 24hrs: <span className="text-green-600 font-medium">70% refund (${calculateRefund(booking).toFixed(2)})</span></span>
-                          ) : (
-                            <span>Cancel after 24hrs: <span className="text-red-600 font-medium">No refund</span></span>
-                          )}
+                        <div className="text-xs text-[#8E8E93] font-light text-center px-3 py-2 bg-gray-50 rounded-lg">
+                          {(() => {
+                            const timeRemaining = getRefundTimeRemaining(booking.createdAt);
+                            const isEligible = isWithin24HoursOfBooking(booking.createdAt);
+                            
+                            if (isEligible && timeRemaining) {
+                              return (
+                                <div className="space-y-1">
+                                  <div>
+                                    <span className="text-green-600 font-medium">70% refund available</span>
+                                    <span className="text-[#8E8E93]"> (${calculateRefund(booking).toFixed(2)})</span>
+                                  </div>
+                                  <div className="text-[#8E8E93]">
+                                    {timeRemaining.hours > 0 && `${timeRemaining.hours}h `}
+                                    {timeRemaining.minutes > 0 && `${timeRemaining.minutes}m `}
+                                    remaining
+                                  </div>
+                                </div>
+                              );
+                            } else {
+                              return (
+                                <div>
+                                  <span className="text-red-600 font-medium">No refund available</span>
+                                  <span className="text-[#8E8E93]"> (24hr window expired)</span>
+                                </div>
+                              );
+                            }
+                          })()}
                         </div>
                       </>
                     )}

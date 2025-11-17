@@ -98,16 +98,40 @@ const HostOnboarding = () => {
     
     try {
       const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+      let photoUrl = null;
+      
+      // First check Firebase Auth photoURL
+      if (currentUser.photoURL) {
+        photoUrl = currentUser.photoURL;
+      }
+      
       if (userDoc.exists()) {
         const userData = userDoc.data();
+        // Check Firestore for profilePhotoUrl or photoURL (use Firestore as priority since it might be more recent)
+        photoUrl = userData.profilePhotoUrl || userData.photoURL || photoUrl;
+        
         setFormData(prev => ({
           ...prev,
           fullName: userData.name || `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || currentUser.displayName || "",
-          profilePhotoUrl: userData.profilePhotoUrl || null
+          profilePhotoUrl: photoUrl
+        }));
+      } else {
+        // If no Firestore doc, use Auth photoURL if available
+        setFormData(prev => ({
+          ...prev,
+          fullName: currentUser.displayName || "",
+          profilePhotoUrl: photoUrl
         }));
       }
     } catch (error) {
       console.error("Error loading user data:", error);
+      // Fallback to Auth photoURL if Firestore fetch fails
+      if (currentUser.photoURL) {
+        setFormData(prev => ({
+          ...prev,
+          profilePhotoUrl: currentUser.photoURL
+        }));
+      }
     }
   };
 
@@ -361,20 +385,20 @@ const HostOnboarding = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#F5F5F7]">
+    <div className="min-h-screen bg-[#F5F5F7] flex flex-col">
       <Header />
       
       {/* Progress Bar - Only show for steps 1-6, hide on success screen */}
       {currentStep <= TOTAL_STEPS && (
-        <div className="bg-white border-b border-gray-200 sticky top-14 z-40">
-          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm font-light text-[#8E8E93]">
+        <div className="bg-white border-b border-gray-200 sticky top-14 z-40 flex-shrink-0">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
+            <div className="flex items-center justify-between mb-2 sm:mb-3">
+              <span className="text-xs sm:text-sm font-light text-[#8E8E93]">
                 Step {currentStep} of {TOTAL_STEPS}
               </span>
               <button
                 onClick={() => navigate("/")}
-                className="text-sm font-light text-[#8E8E93] hover:text-[#1C1C1E] transition-colors"
+                className="text-xs sm:text-sm font-light text-[#8E8E93] hover:text-[#1C1C1E] transition-colors"
               >
                 Exit
               </button>
@@ -385,8 +409,8 @@ const HostOnboarding = () => {
                 style={{ width: `${progressPercentage}%` }}
               ></div>
             </div>
-            <div className="text-right mt-2">
-              <span className="text-sm font-light text-[#0071E3]">
+            <div className="text-right mt-1.5 sm:mt-2">
+              <span className="text-xs sm:text-sm font-light text-[#0071E3]">
                 {progressPercentage}% Complete
               </span>
             </div>
@@ -394,127 +418,135 @@ const HostOnboarding = () => {
         </div>
       )}
 
-      {/* Main Content */}
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 lg:py-16">
-        {/* Success Notification */}
-        {success && (
-          <div 
-            className="mb-6 bg-[#34C759] text-white px-4 py-3 rounded-xl flex items-center justify-between animate-slideDownFadeIn"
-            style={{ animation: 'slideDownFadeIn 0.3s ease-out' }}
-          >
-            <div className="flex items-center gap-3">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-              <span className="text-sm font-medium">{success}</span>
-            </div>
-            <button
-              onClick={() => setSuccess("")}
-              className="text-white/80 hover:text-white"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        )}
-
-        {/* Error Notification */}
-        {error && (
-          <div 
-            className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl flex items-center justify-between animate-slideDownFadeIn"
-            style={{ animation: 'slideDownFadeIn 0.3s ease-out' }}
-          >
-            <div className="flex items-center gap-3">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span className="text-sm font-medium">{error}</span>
-            </div>
-            <button
-              onClick={() => setError("")}
-              className="text-red-600/80 hover:text-red-700"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        )}
-
-        {/* Step Content */}
-        {currentStep === 7 ? (
-          <SuccessStep formData={formData} onContinue={() => navigate("/host/listings")} />
-        ) : (
-          <>
-            <div className="bg-white rounded-3xl shadow-lg p-6 sm:p-8 lg:p-12 animate-fadeInUp">
-              {currentStep === 1 && (
-                <WelcomeStep 
-                  formData={formData} 
-                  setShowPolicyModal={setShowPolicyModal}
-                  policyAcknowledged={policyAcknowledged}
-                />
-              )}
-              {currentStep === 2 && <PlanSelectionStep formData={formData} onPlanSelect={handlePlanSelect} />}
-              {currentStep === 3 && (
-                <PaymentStep 
-                  formData={formData} 
-                  onPaymentSuccess={handlePaymentSuccess}
-                  loading={loading}
-                  isUpgrade={isUpgrade}
-                />
-              )}
-              {currentStep === 4 && (
-                <ProfilePhotoStep 
-                  formData={formData} 
-                  onPhotoUpload={handlePhotoUpload}
-                  loading={loading}
-                />
-              )}
-              {currentStep === 5 && (
-                <HostInfoStep 
-                  formData={formData} 
-                  setFormData={setFormData}
-                />
-              )}
-              {currentStep === 6 && (
-                <ProfilePreviewStep 
-                  formData={formData} 
-                  setFormData={setFormData}
-                  currentUser={currentUser}
-                />
-              )}
-            </div>
-
-            {/* Navigation Buttons */}
-            <div className="flex items-center justify-between mt-8">
-              <button
-                onClick={handleBack}
-                disabled={currentStep === 1 || loading}
-                className="px-6 py-3 bg-white border border-gray-300 text-[#1C1C1E] rounded-xl text-sm sm:text-base font-light hover:bg-gray-50 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          {/* Main Content - Scrollable */}
+      <div className="flex-1 min-h-0 flex flex-col">
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
+            {/* Success Notification */}
+            {success && (
+              <div 
+                className="mb-4 sm:mb-6 bg-[#34C759] text-white px-4 py-3 rounded-xl flex items-center justify-between animate-slideDownFadeIn"
+                style={{ animation: 'slideDownFadeIn 0.3s ease-out' }}
               >
-                Back
-              </button>
-              {currentStep !== 3 && currentStep !== 6 && (
+                <div className="flex items-center gap-3">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span className="text-sm font-medium">{success}</span>
+                </div>
                 <button
-                  onClick={handleNext}
-                  disabled={loading || (currentStep === 1 && !formData.policyRead)}
-                  className="px-8 py-3 bg-[#0071E3] text-white rounded-xl text-sm sm:text-base font-medium hover:bg-[#0051D0] transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={() => setSuccess("")}
+                  className="text-white/80 hover:text-white"
                 >
-                  Continue
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
                 </button>
-              )}
-              {currentStep === 6 && (
+              </div>
+            )}
+
+            {/* Error Notification */}
+            {error && (
+              <div 
+                className="mb-4 sm:mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl flex items-center justify-between animate-slideDownFadeIn"
+                style={{ animation: 'slideDownFadeIn 0.3s ease-out' }}
+              >
+                <div className="flex items-center gap-3">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-sm font-medium">{error}</span>
+                </div>
                 <button
-                  onClick={handleFinish}
-                  disabled={loading || !formData.agreeToTerms}
-                  className="px-8 py-3 bg-[#0071E3] text-white rounded-xl text-sm sm:text-base font-medium hover:bg-[#0051D0] transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={() => setError("")}
+                  className="text-red-600/80 hover:text-red-700"
                 >
-                  {loading ? "Processing..." : "Finish Onboarding"}
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
                 </button>
-              )}
+              </div>
+            )}
+
+            {/* Step Content */}
+            {currentStep === 7 ? (
+              <SuccessStep formData={formData} onContinue={() => navigate("/host/listings")} />
+            ) : (
+              <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg p-3 sm:p-4 lg:p-5 animate-fadeInUp">
+                {currentStep === 1 && (
+                  <WelcomeStep 
+                    formData={formData} 
+                    setShowPolicyModal={setShowPolicyModal}
+                    policyAcknowledged={policyAcknowledged}
+                  />
+                )}
+                {currentStep === 2 && <PlanSelectionStep formData={formData} onPlanSelect={handlePlanSelect} />}
+                {currentStep === 3 && (
+                  <PaymentStep 
+                    formData={formData} 
+                    onPaymentSuccess={handlePaymentSuccess}
+                    loading={loading}
+                    isUpgrade={isUpgrade}
+                  />
+                )}
+                {currentStep === 4 && (
+                  <ProfilePhotoStep 
+                    formData={formData} 
+                    onPhotoUpload={handlePhotoUpload}
+                    loading={loading}
+                  />
+                )}
+                {currentStep === 5 && (
+                  <HostInfoStep 
+                    formData={formData} 
+                    setFormData={setFormData}
+                  />
+                )}
+                {currentStep === 6 && (
+                  <ProfilePreviewStep 
+                    formData={formData} 
+                    setFormData={setFormData}
+                    currentUser={currentUser}
+                  />
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Navigation Buttons - Fixed at bottom */}
+        {currentStep !== 7 && (
+          <div className="flex-shrink-0 bg-[#F5F5F7] border-t border-gray-200">
+            <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-5">
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={handleBack}
+                  disabled={currentStep === 1 || loading}
+                  className="px-6 py-2.5 sm:py-3 bg-white border border-gray-300 text-[#1C1C1E] rounded-xl text-sm sm:text-base font-light hover:bg-gray-50 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Back
+                </button>
+                {currentStep !== 3 && currentStep !== 6 && (
+                  <button
+                    onClick={handleNext}
+                    disabled={loading || (currentStep === 1 && !formData.policyRead)}
+                    className="px-8 py-2.5 sm:py-3 bg-[#0071E3] text-white rounded-xl text-sm sm:text-base font-medium hover:bg-[#0051D0] transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Continue
+                  </button>
+                )}
+                {currentStep === 6 && (
+                  <button
+                    onClick={handleFinish}
+                    disabled={loading || !formData.agreeToTerms}
+                    className="px-8 py-2.5 sm:py-3 bg-[#0071E3] text-white rounded-xl text-sm sm:text-base font-medium hover:bg-[#0051D0] transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading ? "Processing..." : "Finish Onboarding"}
+                  </button>
+                )}
+              </div>
             </div>
-          </>
+          </div>
         )}
       </div>
 
@@ -545,37 +577,37 @@ const WelcomeStep = ({ formData, setShowPolicyModal, policyAcknowledged }) => {
 
   return (
     <div className="text-center animate-fadeInUp">
-      <div className="w-20 h-20 sm:w-24 sm:h-24 mx-auto mb-6 sm:mb-8 rounded-2xl bg-[#0071E3]/10 flex items-center justify-center">
-        <svg className="w-10 h-10 sm:w-12 sm:h-12 text-[#0071E3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="w-16 h-16 sm:w-20 sm:h-20 mx-auto mb-4 sm:mb-6 rounded-xl sm:rounded-2xl bg-[#0071E3]/10 flex items-center justify-center">
+        <svg className="w-8 h-8 sm:w-10 sm:h-10 text-[#0071E3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
         </svg>
       </div>
-      <h2 className="text-3xl sm:text-4xl lg:text-5xl font-light text-[#1C1C1E] mb-4 sm:mb-6">
+      <h2 className="text-2xl sm:text-3xl lg:text-4xl font-light text-[#1C1C1E] mb-2 sm:mb-3">
         Welcome to Hosting,
       </h2>
-      <h2 className="text-3xl sm:text-4xl lg:text-5xl font-light text-[#0071E3] mb-6 sm:mb-8">
+      <h2 className="text-2xl sm:text-3xl lg:text-4xl font-light text-[#0071E3] mb-4 sm:mb-5">
         {userFirstName}!
       </h2>
-      <p className="text-base sm:text-lg text-[#8E8E93] font-light mb-8 sm:mb-10 max-w-2xl mx-auto leading-relaxed">
+      <p className="text-sm sm:text-base text-[#8E8E93] font-light mb-5 sm:mb-6 max-w-2xl mx-auto leading-relaxed">
         Let's create your professional hosting profile and get you ready to host amazing stays on Voyago.
       </p>
       {policyAcknowledged ? (
-        <div className="flex items-center justify-center gap-2 text-green-600 mb-4">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="flex items-center justify-center gap-2 text-green-600 mb-3">
+          <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
-          <p className="text-sm sm:text-base font-medium">
+          <p className="text-xs sm:text-sm font-medium">
             Policy and Compliance acknowledged
           </p>
         </div>
       ) : (
-        <div className="space-y-4">
-          <p className="text-sm sm:text-base text-[#1C1C1E] font-medium mb-4">
+        <div className="space-y-3">
+          <p className="text-xs sm:text-sm text-[#1C1C1E] font-medium mb-3">
             ⚠️ You must read and acknowledge our Policy and Compliance guidelines before continuing.
           </p>
           <button
             onClick={() => setShowPolicyModal(true)}
-            className="px-6 py-3 bg-[#0071E3] text-white rounded-xl text-sm sm:text-base font-medium hover:bg-[#0051D0] transition-all duration-200 shadow-lg hover:shadow-xl"
+            className="px-5 py-2.5 sm:py-3 bg-[#0071E3] text-white rounded-xl text-sm sm:text-base font-medium hover:bg-[#0051D0] transition-all duration-200 shadow-lg hover:shadow-xl"
           >
             Read Policy and Compliance
           </button>
@@ -620,68 +652,68 @@ const PlanSelectionStep = ({ formData, onPlanSelect }) => {
 
   return (
     <div className="animate-fadeInUp">
-      <h2 className="text-3xl sm:text-4xl font-light text-[#1C1C1E] mb-3 sm:mb-4 text-center">
+      <h2 className="text-2xl sm:text-3xl font-light text-[#1C1C1E] mb-2 sm:mb-3 text-center">
         Choose Your Plan
       </h2>
-      <p className="text-base sm:text-lg text-[#8E8E93] font-light mb-8 sm:mb-12 text-center">
+      <p className="text-sm sm:text-base text-[#8E8E93] font-light mb-4 sm:mb-6 text-center">
         Select the perfect plan for your hosting needs
       </p>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
         {plans.map((plan, index) => (
           <div
             key={plan.id}
             onClick={() => onPlanSelect(plan)}
-            className={`relative bg-white border-2 rounded-2xl p-6 sm:p-8 cursor-pointer transition-all duration-300 hover:shadow-xl ${
+            className={`relative bg-white border-2 rounded-xl sm:rounded-2xl p-4 sm:p-5 cursor-pointer transition-all duration-300 hover:shadow-lg ${
               formData.plan?.id === plan.id
-                ? "border-[#0071E3] shadow-lg scale-105"
+                ? "border-[#0071E3] shadow-md scale-[1.02]"
                 : "border-gray-200 hover:border-[#0071E3]/50"
             } animate-fadeInUp`}
             style={{ animationDelay: `${index * 0.1}s` }}
           >
             {plan.popular && (
-              <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-[#0071E3] text-white px-4 py-1 rounded-full text-xs font-medium">
+              <div className="absolute -top-2.5 left-1/2 transform -translate-x-1/2 bg-[#0071E3] text-white px-3 py-0.5 rounded-full text-xs font-medium">
                 Most Popular
               </div>
             )}
             
             {formData.plan?.id === plan.id && (
-              <div className="absolute top-4 right-4 w-6 h-6 bg-[#0071E3] rounded-full flex items-center justify-center">
-                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="absolute top-3 right-3 w-5 h-5 bg-[#0071E3] rounded-full flex items-center justify-center">
+                <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
               </div>
             )}
 
-            <h3 className="text-2xl sm:text-3xl font-light text-[#1C1C1E] mb-2">{plan.name}</h3>
-            <div className="mb-4 sm:mb-6">
-              <span className="text-3xl sm:text-4xl font-light text-[#1C1C1E]">${plan.price}</span>
-              <span className="text-base sm:text-lg text-[#8E8E93] font-light"> / year</span>
+            <h3 className="text-xl sm:text-2xl font-light text-[#1C1C1E] mb-1.5">{plan.name}</h3>
+            <div className="mb-3 sm:mb-4">
+              <span className="text-2xl sm:text-3xl font-light text-[#1C1C1E]">${plan.price}</span>
+              <span className="text-sm sm:text-base text-[#8E8E93] font-light"> / year</span>
             </div>
             
-            <div className="space-y-3 sm:space-y-4 mb-6 sm:mb-8">
+            <div className="space-y-2 sm:space-y-2.5 mb-4 sm:mb-5">
               <div className="flex items-center gap-2">
-                <svg className="w-5 h-5 text-[#0071E3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 text-[#0071E3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
-                <span className="text-sm sm:text-base text-[#1C1C1E] font-light">
+                <span className="text-sm text-[#1C1C1E] font-light">
                   Listings: {plan.listings === 1000 ? "Unlimited" : plan.listings}
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <svg className="w-5 h-5 text-[#0071E3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 text-[#0071E3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
-                <span className="text-sm sm:text-base text-[#1C1C1E] font-light">
+                <span className="text-sm text-[#1C1C1E] font-light">
                   Duration: {plan.duration}
                 </span>
               </div>
             </div>
 
-            <div className="pt-4 sm:pt-6 border-t border-gray-100">
-              <p className="text-xs sm:text-sm text-[#8E8E93] font-light mb-2">Best for:</p>
-              <p className="text-sm sm:text-base text-[#1C1C1E] font-medium mb-2">{plan.bestFor}</p>
-              <p className="text-xs sm:text-sm text-[#8E8E93] font-light">{plan.description}</p>
+            <div className="pt-3 sm:pt-4 border-t border-gray-100">
+              <p className="text-xs text-[#8E8E93] font-light mb-1">Best for:</p>
+              <p className="text-sm text-[#1C1C1E] font-medium mb-1">{plan.bestFor}</p>
+              <p className="text-xs text-[#8E8E93] font-light">{plan.description}</p>
             </div>
           </div>
         ))}
@@ -780,65 +812,65 @@ const PaymentStep = ({ formData, onPaymentSuccess, loading, isUpgrade = false })
 
   return (
     <div className="animate-fadeInUp">
-      <h2 className="text-3xl sm:text-4xl font-light text-[#1C1C1E] mb-3 sm:mb-4 text-center">
+      <h2 className="text-xl sm:text-2xl font-light text-[#1C1C1E] mb-1.5 sm:mb-2 text-center">
         {isUpgrade ? "Upgrade Your Plan" : "Complete Payment"}
       </h2>
-      <p className="text-base sm:text-lg text-[#8E8E93] font-light mb-8 sm:mb-12 text-center">
+      <p className="text-xs sm:text-sm text-[#8E8E93] font-light mb-3 sm:mb-4 text-center">
         {isUpgrade 
           ? `Upgrade to the ${formData.plan.name} plan to get more listings`
           : `Pay for your ${formData.plan.name} plan subscription`
         }
       </p>
 
-      <div className="max-w-md mx-auto bg-gray-50 rounded-2xl p-6 sm:p-8">
-        <div className="mb-6">
-          <h3 className="text-xl font-light text-[#1C1C1E] mb-4">{formData.plan.name} Plan</h3>
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-[#8E8E93] font-light">Subscription</span>
-            <span className="text-lg font-light text-[#1C1C1E]">${formData.plan.price}/year</span>
+      <div className="max-w-md mx-auto bg-gray-50 rounded-xl p-3 sm:p-4">
+        <div className="mb-3">
+          <h3 className="text-base sm:text-lg font-light text-[#1C1C1E] mb-2">{formData.plan.name} Plan</h3>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs text-[#8E8E93] font-light">Subscription</span>
+            <span className="text-sm sm:text-base font-light text-[#1C1C1E]">${formData.plan.price}/year</span>
           </div>
-          <div className="border-t border-gray-200 pt-4 mt-4">
+          <div className="border-t border-gray-200 pt-2 mt-2">
             <div className="flex items-center justify-between">
-              <span className="text-base font-medium text-[#1C1C1E]">Total</span>
-              <span className="text-2xl font-light text-[#1C1C1E]">${formData.plan.price}</span>
+              <span className="text-xs sm:text-sm font-medium text-[#1C1C1E]">Total</span>
+              <span className="text-lg sm:text-xl font-light text-[#1C1C1E]">${formData.plan.price}</span>
             </div>
           </div>
         </div>
 
         {/* Payment Method Selection */}
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-[#1C1C1E] mb-3">
+        <div className="mb-3">
+          <label className="block text-xs font-medium text-[#1C1C1E] mb-1.5">
             Select Payment Method
           </label>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => setPaymentMethod("paypal")}
-              className={`p-4 rounded-xl border-2 transition-all duration-200 ${
+              className={`p-2.5 sm:p-3 rounded-lg sm:rounded-xl border-2 transition-all duration-200 ${
                 paymentMethod === "paypal"
                   ? "border-[#0071E3] bg-[#0071E3]/5"
                   : "border-gray-200 hover:border-gray-300"
               }`}
             >
-              <div className="flex flex-col items-center gap-2">
-                <svg className="w-8 h-8 text-[#0071E3]" fill="currentColor" viewBox="0 0 24 24">
+              <div className="flex flex-col items-center gap-1">
+                <svg className="w-5 h-5 sm:w-6 sm:h-6 text-[#0071E3]" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M7.076 21.337H2.47a.641.641 0 0 1-.633-.74L4.944.901C5.026.382 5.474 0 5.998 0h7.46c2.57 0 4.578.543 5.69 1.81 1.174 1.351 1.05 3.3.93 4.855v.08c-.011 1.699-.027 3.4-.04 4.26-.014.86-.024 1.49-.024 1.93 0 .3.168.54.5.65 1.417.48 2.24 1.44 2.24 2.9 0 1.72-1.39 3.12-3.1 3.12h-2.75c-.524 0-.968.382-1.05.9l-1.12 7.38zm8.267-13.99a.477.477 0 0 0-.415.24l-3.15 5.66h2.85c.524 0 .968.382 1.05.9l.9 5.92 2.1-14.72zm-2.85 5.66l-1.5-2.7-1.5 2.7h3z"/>
                 </svg>
-                <span className="text-sm font-medium text-[#1C1C1E]">PayPal</span>
+                <span className="text-xs font-medium text-[#1C1C1E]">PayPal</span>
               </div>
             </button>
             <button
               onClick={() => setPaymentMethod("wallet")}
-              className={`p-4 rounded-xl border-2 transition-all duration-200 ${
+              className={`p-2.5 sm:p-3 rounded-lg sm:rounded-xl border-2 transition-all duration-200 ${
                 paymentMethod === "wallet"
                   ? "border-[#34C759] bg-[#34C759]/5"
                   : "border-gray-200 hover:border-gray-300"
               }`}
             >
-              <div className="flex flex-col items-center gap-2">
-                <svg className="w-8 h-8 text-[#34C759]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="flex flex-col items-center gap-1">
+                <svg className="w-5 h-5 sm:w-6 sm:h-6 text-[#34C759]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
                 </svg>
-                <span className="text-sm font-medium text-[#1C1C1E]">E-Wallet</span>
+                <span className="text-xs font-medium text-[#1C1C1E]">E-Wallet</span>
               </div>
             </button>
           </div>
@@ -846,13 +878,13 @@ const PaymentStep = ({ formData, onPaymentSuccess, loading, isUpgrade = false })
 
         {/* Wallet Balance Display */}
         {paymentMethod === "wallet" && (
-          <div className="mb-6 p-4 bg-white rounded-xl border border-gray-200">
+          <div className="mb-3 p-2.5 sm:p-3 bg-white rounded-xl border border-gray-200">
             {checkingWallet ? (
-              <p className="text-sm text-[#8E8E93] font-light">Checking wallet balance...</p>
+              <p className="text-xs text-[#8E8E93] font-light">Checking wallet balance...</p>
             ) : (
               <div className="flex items-center justify-between">
-                <span className="text-sm text-[#8E8E93] font-light">Wallet Balance:</span>
-                <span className={`text-lg font-medium ${
+                <span className="text-xs text-[#8E8E93] font-light">Wallet Balance:</span>
+                <span className={`text-sm sm:text-base font-medium ${
                   walletBalance >= formData.plan.price ? "text-[#34C759]" : "text-[#FF3B30]"
                 }`}>
                   ${walletBalance.toFixed(2)}
@@ -860,7 +892,7 @@ const PaymentStep = ({ formData, onPaymentSuccess, loading, isUpgrade = false })
               </div>
             )}
             {!checkingWallet && walletBalance < formData.plan.price && (
-              <p className="text-xs text-[#FF3B30] font-light mt-2">
+              <p className="text-xs text-[#FF3B30] font-light mt-1">
                 Insufficient balance. You need ${(formData.plan.price - walletBalance).toFixed(2)} more.
               </p>
             )}
@@ -895,7 +927,8 @@ const PaymentStep = ({ formData, onPaymentSuccess, loading, isUpgrade = false })
                 layout: "vertical",
                 color: "blue",
                 shape: "rect",
-                label: "paypal"
+                label: "paypal",
+                height: 35
               }}
             />
           </PayPalScriptProvider>
@@ -903,7 +936,7 @@ const PaymentStep = ({ formData, onPaymentSuccess, loading, isUpgrade = false })
           <button
             onClick={handleWalletPayment}
             disabled={processingWallet || checkingWallet || walletBalance < formData.plan.price}
-            className={`w-full py-4 rounded-xl text-base font-medium transition-all duration-200 ${
+            className={`w-full py-2.5 sm:py-3 rounded-xl text-sm sm:text-base font-medium transition-all duration-200 ${
               processingWallet || checkingWallet || walletBalance < formData.plan.price
                 ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                 : "bg-[#34C759] text-white hover:bg-[#30D158] shadow-sm hover:shadow-md"
@@ -911,7 +944,7 @@ const PaymentStep = ({ formData, onPaymentSuccess, loading, isUpgrade = false })
           >
             {processingWallet ? (
               <div className="flex items-center justify-center gap-2">
-                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                 <span>Processing...</span>
               </div>
             ) : checkingWallet ? (
@@ -932,15 +965,15 @@ const PaymentStep = ({ formData, onPaymentSuccess, loading, isUpgrade = false })
 const ProfilePhotoStep = ({ formData, onPhotoUpload, loading }) => {
   return (
     <div className="animate-fadeInUp">
-      <h2 className="text-3xl sm:text-4xl font-light text-[#1C1C1E] mb-3 sm:mb-4 text-center">
+      <h2 className="text-2xl sm:text-3xl font-light text-[#1C1C1E] mb-2 sm:mb-3 text-center">
         Profile Photo
       </h2>
-      <p className="text-base sm:text-lg text-[#8E8E93] font-light mb-8 sm:mb-12 text-center">
+      <p className="text-sm sm:text-base text-[#8E8E93] font-light mb-5 sm:mb-6 text-center">
         Add a professional photo to build trust with your guests
       </p>
 
       <div className="max-w-md mx-auto">
-        <div className="relative w-48 h-48 sm:w-64 sm:h-64 mx-auto mb-6 sm:mb-8">
+        <div className="relative w-40 h-40 sm:w-48 sm:h-48 mx-auto mb-4 sm:mb-5">
           {formData.profilePhotoUrl ? (
             <img
               src={formData.profilePhotoUrl}
@@ -983,24 +1016,69 @@ const HostInfoStep = ({ formData, setFormData }) => {
   const { currentUser } = useAuth();
   
   useEffect(() => {
-    if (!formData.fullName && currentUser) {
-      setFormData(prev => ({
-        ...prev,
-        fullName: currentUser.displayName || currentUser.email?.split("@")[0] || ""
-      }));
-    }
-  }, [currentUser, formData.fullName, setFormData]);
+    const fetchFullName = async () => {
+      if (!currentUser) return;
+      
+      try {
+        // Always fetch fresh data when reaching step 5 to override any incorrect cached values
+        const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+        let fullName = "";
+        
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          // Try multiple fields in order of preference
+          fullName = userData.name || 
+                     `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || 
+                     userData.displayName ||
+                     "";
+          
+          // Only use Firebase Auth if Firestore doesn't have a name
+          if (!fullName) {
+            fullName = currentUser.displayName || "";
+          }
+        } else {
+          // If no Firestore doc, use Firebase Auth
+          fullName = currentUser.displayName || "";
+        }
+        
+        // Fallback to email username if no display name found
+        if (!fullName && currentUser.email) {
+          fullName = currentUser.email.split("@")[0];
+        }
+        
+        // Always update with the fetched name, even if it overwrites existing value
+        if (fullName) {
+          setFormData(prev => ({
+            ...prev,
+            fullName: fullName
+          }));
+        }
+      } catch (error) {
+        console.error("Error fetching full name:", error);
+        // Fallback to Firebase Auth on error
+        const authName = currentUser.displayName || currentUser.email?.split("@")[0] || "";
+        if (authName) {
+          setFormData(prev => ({
+            ...prev,
+            fullName: authName
+          }));
+        }
+      }
+    };
+    
+    fetchFullName();
+  }, [currentUser, setFormData]); // Removed formData.fullName from dependencies to always fetch
 
   return (
     <div className="max-w-2xl mx-auto animate-fadeInUp">
-      <h2 className="text-3xl sm:text-4xl font-light text-[#1C1C1E] mb-3 sm:mb-4 text-center">
+      <h2 className="text-2xl sm:text-3xl font-light text-[#1C1C1E] mb-2 sm:mb-3 text-center">
         Host Information
       </h2>
-      <p className="text-base sm:text-lg text-[#8E8E93] font-light mb-8 sm:mb-12 text-center">
+      <p className="text-sm sm:text-base text-[#8E8E93] font-light mb-5 sm:mb-6 text-center">
         Tell us about your hosting experience and background
       </p>
 
-      <div className="space-y-6 sm:space-y-8">
+      <div className="space-y-4 sm:space-y-5">
         <div>
           <label className="block text-sm sm:text-base font-medium text-[#1C1C1E] mb-2">
             Full Name <span className="text-red-500">*</span>
@@ -1019,10 +1097,10 @@ const HostInfoStep = ({ formData, setFormData }) => {
           <label className="block text-sm sm:text-base font-medium text-[#1C1C1E] mb-2">
             Professional Bio
           </label>
-          <textarea
+            <textarea
             value={formData.bio}
             onChange={(e) => setFormData(prev => ({ ...prev, bio: e.target.value }))}
-            rows={5}
+            rows={4}
             className="w-full px-4 py-3 bg-[#F2F2F7] border border-transparent rounded-xl text-sm sm:text-base text-[#1C1C1E] placeholder:text-[#8E8E93] focus:outline-none focus:ring-2 focus:ring-[#0071E3]/20 focus:bg-white transition-all resize-none"
             placeholder="Describe your hosting style, expertise, and what guests can expect..."
           />
@@ -1189,7 +1267,116 @@ const SuccessStep = ({ formData, onContinue }) => {
 const PolicyModal = ({ onClose, onAcknowledge, acknowledged }) => {
   const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
   const [agreeChecked, setAgreeChecked] = useState(false);
+  const [policyContent, setPolicyContent] = useState("");
+  const [loadingPolicy, setLoadingPolicy] = useState(true);
   const scrollContainerRef = useRef(null);
+
+  useEffect(() => {
+    fetchPolicyContent();
+  }, []);
+
+  const fetchPolicyContent = async () => {
+    try {
+      setLoadingPolicy(true);
+      const policyDoc = await getDoc(doc(db, "adminSettings", "policyContent"));
+      
+      let sections = null;
+      if (policyDoc.exists()) {
+        const data = policyDoc.data();
+        if (data.sections) {
+          sections = data.sections;
+        } else if (data.content) {
+          // Migrate old format to new format
+          const content = data.content;
+          sections = {
+            introduction: content.split("## General Platform Rules")[0]?.trim() || "",
+            generalPlatformRules: content.split("## General Platform Rules")[1]?.split("## Booking & Payment Policy")[0]?.trim() || "",
+            bookingPaymentPolicy: content.split("## Booking & Payment Policy")[1]?.split("## Cancellation & Refund Policy")[0]?.trim() || "",
+            cancellationRefundPolicy: content.split("## Cancellation & Refund Policy")[1]?.split("## Host Responsibilities")[0]?.trim() || "",
+            hostResponsibilities: content.split("## Host Responsibilities")[1]?.split("## Code of Conduct")[0]?.trim() || "",
+            codeOfConduct: content.split("## Code of Conduct")[1]?.split("## Privacy & Data Protection")[0]?.trim() || "",
+            privacyDataProtection: content.split("## Privacy & Data Protection")[1]?.trim() || ""
+          };
+        }
+      }
+      
+      if (!sections) {
+        // Default sections
+        sections = {
+          introduction: "Welcome to Voyago, a peer-to-peer accommodation booking platform connecting guests with verified hosts offering unique stays and experiences. By using Voyago, you agree to comply with these policies, which are designed to ensure a safe, fair, and transparent environment for all users.",
+          generalPlatformRules: "All users must provide accurate and up-to-date information in their profiles and listings. Any attempt to mislead, defraud, or manipulate the platform or its users will result in immediate account suspension. Voyago reserves the right to review, remove, or suspend any listing or booking that violates these policies. All communication and transactions must occur within the Voyago platform for security and tracking purposes.",
+          bookingPaymentPolicy: "Guests must complete full payment through Voyago's secure payment system before a booking is confirmed. The host will receive their payout 24 hours after the check-in date, once the booking is verified as completed. Payments are held temporarily by Voyago to ensure proper transaction processing and compliance.",
+          cancellationRefundPolicy: "Cancellation policies vary by listing and are clearly displayed before booking. Guests may cancel according to the host's cancellation policy. Refunds will be processed according to the policy terms. Hosts who cancel confirmed bookings may face penalties and account restrictions.",
+          hostResponsibilities: "Hosts are responsible for maintaining accurate listing information, providing clean and safe accommodations, responding to guest inquiries promptly, and honoring confirmed bookings. Hosts must comply with all local laws and regulations regarding short-term rentals.",
+          codeOfConduct: "All hosts must maintain professional conduct, treat guests with respect, and provide accurate descriptions of their properties. Discrimination of any kind is strictly prohibited. Hosts must respond to booking requests and messages in a timely manner.",
+          privacyDataProtection: "Voyago is committed to protecting user privacy. All personal information is handled according to our Privacy Policy. Hosts must respect guest privacy and not share guest information with third parties without consent."
+        };
+      }
+      
+      // Convert sections to formatted string for display
+      const sectionTitles = {
+        introduction: "",
+        generalPlatformRules: "## General Platform Rules",
+        bookingPaymentPolicy: "## Booking & Payment Policy",
+        cancellationRefundPolicy: "## Cancellation & Refund Policy",
+        hostResponsibilities: "## Host Responsibilities",
+        codeOfConduct: "## Code of Conduct",
+        privacyDataProtection: "## Privacy & Data Protection"
+      };
+      
+      const sectionOrder = [
+        "introduction",
+        "generalPlatformRules",
+        "bookingPaymentPolicy",
+        "cancellationRefundPolicy",
+        "hostResponsibilities",
+        "codeOfConduct",
+        "privacyDataProtection"
+      ];
+      
+      const formattedContent = sectionOrder
+        .map(key => {
+          const title = sectionTitles[key];
+          const content = sections[key];
+          if (!content || content.trim() === "") return "";
+          return title ? `${title}\n\n${content}` : content;
+        })
+        .filter(Boolean)
+        .join("\n\n");
+      
+      setPolicyContent(formattedContent);
+    } catch (error) {
+      console.error("Error fetching policy content:", error);
+      // Use default content on error
+      setPolicyContent(`Welcome to Voyago, a peer-to-peer accommodation booking platform connecting guests with verified hosts offering unique stays and experiences. By using Voyago, you agree to comply with these policies, which are designed to ensure a safe, fair, and transparent environment for all users.
+
+## General Platform Rules
+
+All users must provide accurate and up-to-date information in their profiles and listings. Any attempt to mislead, defraud, or manipulate the platform or its users will result in immediate account suspension. Voyago reserves the right to review, remove, or suspend any listing or booking that violates these policies. All communication and transactions must occur within the Voyago platform for security and tracking purposes.
+
+## Booking & Payment Policy
+
+Guests must complete full payment through Voyago's secure payment system before a booking is confirmed. The host will receive their payout 24 hours after the check-in date, once the booking is verified as completed. Payments are held temporarily by Voyago to ensure proper transaction processing and compliance.
+
+## Cancellation & Refund Policy
+
+Cancellation policies vary by listing and are clearly displayed before booking. Guests may cancel according to the host's cancellation policy. Refunds will be processed according to the policy terms. Hosts who cancel confirmed bookings may face penalties and account restrictions.
+
+## Host Responsibilities
+
+Hosts are responsible for maintaining accurate listing information, providing clean and safe accommodations, responding to guest inquiries promptly, and honoring confirmed bookings. Hosts must comply with all local laws and regulations regarding short-term rentals.
+
+## Code of Conduct
+
+All hosts must maintain professional conduct, treat guests with respect, and provide accurate descriptions of their properties. Discrimination of any kind is strictly prohibited. Hosts must respond to booking requests and messages in a timely manner.
+
+## Privacy & Data Protection
+
+Voyago is committed to protecting user privacy. All personal information is handled according to our Privacy Policy. Hosts must respect guest privacy and not share guest information with third parties without consent.`);
+    } finally {
+      setLoadingPolicy(false);
+    }
+  };
 
   const handleScroll = () => {
     const container = scrollContainerRef.current;
@@ -1222,10 +1409,10 @@ const PolicyModal = ({ onClose, onAcknowledge, acknowledged }) => {
       ></div>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
         <div 
-          className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden animate-slideDownFadeIn"
+          className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col animate-slideDownFadeIn"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="p-6 sm:p-8 border-b border-gray-200 flex items-center justify-between">
+          <div className="p-6 sm:p-8 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
             <h3 className="text-xl sm:text-2xl font-light text-[#1C1C1E]">Voyago Policy & Compliance Guidelines</h3>
             {acknowledged && (
               <button
@@ -1241,63 +1428,42 @@ const PolicyModal = ({ onClose, onAcknowledge, acknowledged }) => {
           <div 
             ref={scrollContainerRef}
             onScroll={handleScroll}
-            className="p-6 sm:p-8 overflow-y-auto max-h-[calc(90vh-200px)]"
+            className="p-6 sm:p-8 overflow-y-auto flex-1 min-h-0"
           >
+            {loadingPolicy ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-[#0071E3]"></div>
+              </div>
+            ) : (
             <div className="space-y-6 text-sm sm:text-base text-[#1C1C1E] font-light leading-relaxed">
-              <section>
-                <h4 className="text-lg font-medium text-[#1C1C1E] mb-3">Introduction</h4>
-                <p className="text-[#8E8E93]">
-                  Welcome to Voyago, a peer-to-peer accommodation booking platform connecting guests with verified hosts offering unique stays and experiences. By using Voyago, you agree to comply with these policies, which are designed to ensure a safe, fair, and transparent environment for all users.
-                </p>
-              </section>
-
-              <section>
-                <h4 className="text-lg font-medium text-[#1C1C1E] mb-3">General Platform Rules</h4>
-                <ul className="list-disc list-inside space-y-2 text-[#8E8E93] ml-4">
-                  <li>All users must provide accurate and up-to-date information in their profiles and listings.</li>
-                  <li>Any attempt to mislead, defraud, or manipulate the platform or its users will result in immediate account suspension.</li>
-                  <li>Voyago reserves the right to review, remove, or suspend any listing or booking that violates these policies.</li>
-                  <li>All communication and transactions must occur within the Voyago platform for security and tracking purposes.</li>
-                </ul>
-              </section>
-
-              <section>
-                <h4 className="text-lg font-medium text-[#1C1C1E] mb-3">Booking & Payment Policy</h4>
-                <p className="text-[#8E8E93]">
-                  Guests must complete full payment through Voyago's secure payment system before a booking is confirmed. The host will receive their payout 24 hours after the check-in date, once the booking is verified as completed. Payments are held temporarily by Voyago to ensure proper transaction processing and compliance.
-                </p>
-              </section>
-
-              <section>
-                <h4 className="text-lg font-medium text-[#1C1C1E] mb-3">Cancellation & Refund Policy</h4>
-                <p className="text-[#8E8E93]">
-                  Cancellation policies vary by listing and are clearly displayed before booking. Guests may cancel according to the host's cancellation policy. Refunds will be processed according to the policy terms. Hosts who cancel confirmed bookings may face penalties and account restrictions.
-                </p>
-              </section>
-
-              <section>
-                <h4 className="text-lg font-medium text-[#1C1C1E] mb-3">Host Responsibilities</h4>
-                <p className="text-[#8E8E93]">
-                  Hosts are responsible for maintaining accurate listing information, providing clean and safe accommodations, responding to guest inquiries promptly, and honoring confirmed bookings. Hosts must comply with all local laws and regulations regarding short-term rentals.
-                </p>
-              </section>
-
-              <section>
-                <h4 className="text-lg font-medium text-[#1C1C1E] mb-3">Code of Conduct</h4>
-                <p className="text-[#8E8E93]">
-                  All hosts must maintain professional conduct, treat guests with respect, and provide accurate descriptions of their properties. Discrimination of any kind is strictly prohibited. Hosts must respond to booking requests and messages in a timely manner.
-                </p>
-              </section>
-
-              <section>
-                <h4 className="text-lg font-medium text-[#1C1C1E] mb-3">Privacy & Data Protection</h4>
-                <p className="text-[#8E8E93]">
-                  Voyago is committed to protecting user privacy. All personal information is handled according to our Privacy Policy. Hosts must respect guest privacy and not share guest information with third parties without consent.
-                </p>
-              </section>
+                {policyContent.split('\n').map((line, index) => {
+                  // Simple markdown-like rendering
+                  if (line.startsWith('## ')) {
+                    return (
+                      <h4 key={index} className="text-lg font-medium text-[#1C1C1E] mb-3 mt-6 first:mt-0">
+                        {line.substring(3)}
+                      </h4>
+                    );
+                  } else if (line.startsWith('### ')) {
+                    return (
+                      <h5 key={index} className="text-base font-medium text-[#1C1C1E] mb-2 mt-4">
+                        {line.substring(4)}
+                      </h5>
+                    );
+                  } else if (line.trim() === '') {
+                    return <br key={index} />;
+                  } else {
+                    return (
+                      <p key={index} className="text-[#8E8E93] mb-3">
+                        {line}
+                      </p>
+                    );
+                  }
+                })}
             </div>
+            )}
           </div>
-          <div className="p-6 sm:p-8 border-t border-gray-200 space-y-4">
+          <div className="p-6 sm:p-8 border-t border-gray-200 space-y-4 bg-white flex-shrink-0 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
             {!hasScrolledToBottom && (
               <p className="text-sm text-amber-600 text-center">
                 ⚠️ Please scroll to the bottom to read the complete policy
@@ -1322,7 +1488,7 @@ const PolicyModal = ({ onClose, onAcknowledge, acknowledged }) => {
             <button
               onClick={handleAcknowledge}
               disabled={!agreeChecked || !hasScrolledToBottom}
-              className="w-full bg-[#0071E3] text-white rounded-xl py-3 sm:py-4 text-sm sm:text-base font-medium hover:bg-[#0051D0] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full bg-[#0071E3] text-white rounded-xl py-3 sm:py-4 text-sm sm:text-base font-medium hover:bg-[#0051D0] transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
             >
               I Acknowledge and Agree
             </button>

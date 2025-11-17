@@ -10,6 +10,7 @@ const RewardsCenterModal = ({ isOpen, onClose }) => {
   const [points, setPoints] = useState(0);
   const [walletBalance, setWalletBalance] = useState(0);
   const [transactions, setTransactions] = useState([]);
+  const [pointsHistory, setPointsHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [claimingReward, setClaimingReward] = useState(false);
   const [showRewardSuccess, setShowRewardSuccess] = useState(false);
@@ -32,6 +33,7 @@ const RewardsCenterModal = ({ isOpen, onClose }) => {
         setPoints(data.points || 0);
         setWalletBalance(data.walletBalance || 0);
         setTransactions(data.transactions || []);
+        setPointsHistory(data.pointsHistory || []);
       }
     } catch (error) {
       console.error("Error fetching rewards data:", error);
@@ -111,39 +113,154 @@ const RewardsCenterModal = ({ isOpen, onClose }) => {
           <div className="flex border-b border-gray-200 flex-shrink-0">
             <button
               onClick={() => setActiveTab("points")}
-              className={`flex-1 px-6 sm:px-8 py-4 sm:py-5 text-sm sm:text-base font-medium transition-all duration-200 relative ${
+              className={`flex-1 px-4 sm:px-6 py-4 sm:py-5 text-xs sm:text-sm font-medium transition-all duration-200 relative ${
                 activeTab === "points" 
                   ? "text-[#0071E3] border-b-2 border-[#0071E3]" 
                   : "text-[#8E8E93] hover:text-[#1C1C1E]"
               }`}
             >
-              <div className="flex items-center justify-center gap-2 sm:gap-3">
-                <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="flex items-center justify-center gap-1.5 sm:gap-2">
+                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
                 </svg>
-                <span>Points & Rewards</span>
+                <span className="hidden sm:inline">Points & Rewards</span>
+                <span className="sm:hidden">Points</span>
               </div>
             </button>
             <button
               onClick={() => setActiveTab("wallet")}
-              className={`flex-1 px-6 sm:px-8 py-4 sm:py-5 text-sm sm:text-base font-medium transition-all duration-200 relative ${
+              className={`flex-1 px-4 sm:px-6 py-4 sm:py-5 text-xs sm:text-sm font-medium transition-all duration-200 relative ${
                 activeTab === "wallet" 
                   ? "text-[#0071E3] border-b-2 border-[#0071E3]" 
                   : "text-[#8E8E93] hover:text-[#1C1C1E]"
               }`}
             >
-              <div className="flex items-center justify-center gap-2 sm:gap-3">
-                <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="flex items-center justify-center gap-1.5 sm:gap-2">
+                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
                 </svg>
                 <span>Wallet</span>
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab("history")}
+              className={`flex-1 px-4 sm:px-6 py-4 sm:py-5 text-xs sm:text-sm font-medium transition-all duration-200 relative ${
+                activeTab === "history" 
+                  ? "text-[#0071E3] border-b-2 border-[#0071E3]" 
+                  : "text-[#8E8E93] hover:text-[#1C1C1E]"
+              }`}
+            >
+              <div className="flex items-center justify-center gap-1.5 sm:gap-2">
+                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>History</span>
               </div>
             </button>
           </div>
 
           {/* Content */}
           <div className="flex-1 overflow-y-auto px-6 py-6 sm:px-8 sm:py-8">
-            {activeTab === "points" ? (
+            {activeTab === "history" ? (
+              <div className="space-y-6 sm:space-y-8">
+                {/* Header */}
+                <div>
+                  <h3 className="text-xl sm:text-2xl font-light text-[#1C1C1E] mb-2">Claim History</h3>
+                  <p className="text-sm text-[#8E8E93] font-light">View all your claimed rewards</p>
+                </div>
+
+                {/* Claimed Rewards List */}
+                {loading ? (
+                  <div className="text-center py-12">
+                    <div className="w-12 h-12 border-4 border-[#0071E3] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                    <p className="text-sm text-[#8E8E93] font-light">Loading history...</p>
+                  </div>
+                ) : (() => {
+                  const claimedRewards = pointsHistory.filter(entry => 
+                    entry.type === "redeemed" && entry.action === "reward_claim"
+                  ).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+                  return claimedRewards.length > 0 ? (
+                    <div className="space-y-3 sm:space-y-4">
+                      {claimedRewards.map((reward, index) => (
+                        <div
+                          key={index}
+                          className="bg-white border border-gray-200 rounded-xl p-4 sm:p-5 hover:border-[#0071E3] hover:shadow-md transition-all duration-200"
+                          style={{ animation: `fadeInUp 0.3s ease-out ${0.05 * index}s both` }}
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex items-start gap-4 flex-1">
+                              {/* Icon */}
+                              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-[#34C759]/10 flex items-center justify-center flex-shrink-0">
+                                <svg className="w-6 h-6 sm:w-7 sm:h-7 text-[#34C759]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v13m0-13V6a2 2 0 112 2v7m-2 2H10a2 2 0 01-2-2V9a2 2 0 012-2h2m-4 5h4m-4 0v5a2 2 0 002 2h4a2 2 0 002-2v-5m-6 0h6" />
+                                </svg>
+                              </div>
+
+                              {/* Details */}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <h4 className="text-base sm:text-lg font-medium text-[#1C1C1E]">Reward Claimed</h4>
+                                  <span className="px-2 py-1 bg-[#34C759]/10 text-[#34C759] rounded-lg text-xs font-medium">
+                                    Completed
+                                  </span>
+                                </div>
+                                
+                                <div className="space-y-1.5 mb-3">
+                                  <div className="flex items-center gap-2 text-sm text-[#1C1C1E]">
+                                    <span className="text-[#8E8E93] font-light">Amount:</span>
+                                    <span className="font-semibold text-[#34C759]">+${reward.rewardAmount?.toFixed(2) || REWARD_AMOUNT.toFixed(2)}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-sm text-[#1C1C1E]">
+                                    <span className="text-[#8E8E93] font-light">Points Used:</span>
+                                    <span className="font-medium">{Math.abs(reward.points)} points</span>
+                                  </div>
+                                </div>
+
+                                <p className="text-xs sm:text-sm text-[#8E8E93] font-light">
+                                  {new Date(reward.date).toLocaleDateString('en-US', { 
+                                    year: 'numeric', 
+                                    month: 'long', 
+                                    day: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Amount Badge */}
+                            <div className="text-right flex-shrink-0 ml-4">
+                              <div className="bg-gradient-to-br from-[#34C759] to-[#30D158] rounded-xl px-4 py-3 text-white shadow-lg">
+                                <p className="text-xs font-light mb-1">Added</p>
+                                <p className="text-xl sm:text-2xl font-light">
+                                  ${reward.rewardAmount?.toFixed(2) || REWARD_AMOUNT.toFixed(2)}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="bg-gray-50 rounded-xl p-12 sm:p-16 text-center">
+                      <div className="w-16 h-16 sm:w-20 sm:h-20 mx-auto mb-4 sm:mb-6 rounded-full bg-[#0071E3]/10 flex items-center justify-center">
+                        <svg className="w-8 h-8 sm:w-10 sm:h-10 text-[#0071E3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v13m0-13V6a2 2 0 112 2v7m-2 2H10a2 2 0 01-2-2V9a2 2 0 012-2h2m-4 5h4m-4 0v5a2 2 0 002 2h4a2 2 0 002-2v-5m-6 0h6" />
+                        </svg>
+                      </div>
+                      <h3 className="text-lg sm:text-xl font-light text-[#1C1C1E] mb-2">No Rewards Claimed Yet</h3>
+                      <p className="text-sm sm:text-base text-[#8E8E93] font-light mb-4">
+                        Start earning points by booking stays and leaving reviews!
+                      </p>
+                      <p className="text-xs text-[#8E8E93] font-light">
+                        Claim your first reward when you reach {POINTS_FOR_REWARD} points
+                      </p>
+                    </div>
+                  );
+                })()}
+              </div>
+            ) : activeTab === "points" ? (
               <div className="space-y-6 sm:space-y-8">
                 {/* Points Display */}
                 <div className="bg-[#0071E3] rounded-2xl p-8 sm:p-10 text-center shadow-lg">

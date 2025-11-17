@@ -1518,6 +1518,11 @@ const Home = () => {
                     My Bookings
                   </a>
                 </li>
+                <li>
+                  <a href="/policy" className="text-white/80 hover:text-white transition-colors duration-200 text-sm sm:text-base font-light block py-0.5 break-words">
+                    Policy & Compliance
+                  </a>
+                </li>
               </ul>
             </div>
 
@@ -1549,9 +1554,14 @@ const Home = () => {
 
           {/* Separator */}
           <div className="border-t border-white/10 mt-10 sm:mt-12 md:mt-16 pt-6 sm:pt-8 md:pt-10 copyright-section">
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-6">
             <p className="text-center text-white/60 text-xs sm:text-sm md:text-base font-light break-words">
               © 2025 Voyago. All rights reserved.
             </p>
+              <a href="/policy" className="text-white/60 hover:text-white/80 transition-colors duration-200 text-xs sm:text-sm md:text-base font-light">
+                Policy & Compliance
+              </a>
+            </div>
           </div>
         </div>
       </footer>

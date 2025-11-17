@@ -30,7 +30,7 @@ Click **"Advanced"** → **"Environment Variables"** and add:
 ```
 PAYOUT_API_KEY=voyago-secret-api-key-2024
 PAYPAL_CLIENT_ID=ASEGKmY1EZ2TiV4AJdCqlBsoKQVcKBYBPsloT6k7P1LdpKKrLcV3qQtXMrKySCWPnh7TxU10mW8HUh84
-PAYPAL_SECRET=your-paypal-secret-here
+PAYPAL_SECRET=EI1dd97b5nt7sVhAOfLpICJd5iRKh9xARnGN0y58mBT1i8V3jZfsR7Ojtbqkz0kW7d_z-ITb-YhWdzAO
 PAYPAL_MODE=sandbox
 PORT=3000
 NODE_ENV=production

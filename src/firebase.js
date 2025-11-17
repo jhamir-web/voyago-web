@@ -55,6 +55,31 @@ export const processPayPalPayout = async (data, auth) => {
 
   return response.json();
 };
+
+export const checkPayPalPayoutStatus = async (batchId, auth) => {
+  // Verify user is authenticated
+  if (!auth.currentUser) {
+    throw new Error("User must be authenticated");
+  }
+
+  // Call the API to check payout status
+  const url = `${PAYOUT_SERVER_URL}/api/payout?batchId=${encodeURIComponent(batchId)}`;
+  
+  const response = await fetch(url, {
+    method: "GET",
+    mode: "cors",
+    headers: {
+      "x-api-key": PAYOUT_API_KEY
+    }
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || "Failed to check payout status");
+  }
+
+  return response.json();
+};
 export const storage = getStorage(app);
 
 // Enable Firestore network (fixes offline errors)

@@ -2,12 +2,16 @@ import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
-import { collection, query, getDocs, onSnapshot, where, doc, getDoc, updateDoc, addDoc, serverTimestamp } from "firebase/firestore";
-import { db, processPayPalPayout } from "../../firebase";
+import { collection, query, getDocs, onSnapshot, where, doc, getDoc, updateDoc, addDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { db, processPayPalPayout, checkPayPalPayoutStatus } from "../../firebase";
 import { auth } from "../../firebase";
 import jsPDF from "jspdf";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
+import ConfirmModal from "../../components/ConfirmModal";
+import NotesModal from "../../components/NotesModal";
+import FeePreviewModal from "../../components/FeePreviewModal";
+import Toast from "../../components/Toast";
 
 const AdminDashboard = () => {
   const { currentUser, userRole, loading: authLoading } = useAuth();
@@ -30,7 +34,9 @@ const AdminDashboard = () => {
     averageRating: 0,
     totalBookings: 0,
     todayBookings: 0,
-    upcomingBookings: 0
+    todayBookingsList: [],
+    upcomingBookings: 0,
+    upcomingBookingsList: []
   });
   const [loading, setLoading] = useState(true);
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -78,9 +84,7 @@ const AdminDashboard = () => {
     // Set active section based on URL
     const path = location.pathname;
       if (path.includes("/admin/cashout")) setActiveSection("cashout");
-      else if (path.includes("/admin/pending")) setActiveSection("pending");
       else if (path.includes("/admin/subscriptions")) setActiveSection("subscriptions");
-      else if (path.includes("/admin/termination")) setActiveSection("termination");
       else if (path.includes("/admin/servicefees")) setActiveSection("servicefees");
       else if (path.includes("/admin/policy")) setActiveSection("policy");
     else if (path.includes("/admin/users")) setActiveSection("users");
@@ -210,19 +214,23 @@ const AdminDashboard = () => {
       // Calculate today's bookings
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      const todayBookings = allBookings.filter(b => {
+      const todayBookingsList = allBookings.filter(b => {
         const checkIn = b.checkIn ? new Date(b.checkIn) : null;
         if (!checkIn) return false;
         checkIn.setHours(0, 0, 0, 0);
         return checkIn.getTime() === today.getTime() && b.status === "confirmed";
-      }).length;
+      });
       
       // Calculate upcoming bookings
-      const upcomingBookings = allBookings.filter(b => {
+      const upcomingBookingsList = allBookings.filter(b => {
         const checkIn = b.checkIn ? new Date(b.checkIn) : null;
         if (!checkIn) return false;
         return checkIn > today && b.status === "confirmed";
-      }).length;
+      }).sort((a, b) => {
+        const dateA = a.checkIn ? new Date(a.checkIn) : new Date(0);
+        const dateB = b.checkIn ? new Date(b.checkIn) : new Date(0);
+        return dateA - dateB;
+      }).slice(0, 5); // Limit to 5 upcoming bookings
       
       // Calculate average rating from reviews
       const averageRating = allReviews.length > 0 
@@ -243,8 +251,10 @@ const AdminDashboard = () => {
         totalListings,
         averageRating,
         totalBookings: allBookings.length,
-        todayBookings,
-        upcomingBookings,
+        todayBookings: todayBookingsList.length,
+        todayBookingsList: todayBookingsList.slice(0, 5), // Limit to 5 today's bookings
+        upcomingBookings: upcomingBookingsList.length,
+        upcomingBookingsList: upcomingBookingsList,
         allReviews // Store reviews for analytics
       });
     } catch (error) {
@@ -318,22 +328,10 @@ const AdminDashboard = () => {
               onClick={() => handleSectionChange("cashout")}
             />
             <NavItem
-              icon="pending"
-              label="Pending Payouts"
-              active={activeSection === "pending"}
-              onClick={() => handleSectionChange("pending")}
-            />
-            <NavItem
               icon="subscriptions"
               label="Subscriptions"
               active={activeSection === "subscriptions"}
               onClick={() => handleSectionChange("subscriptions")}
-            />
-            <NavItem
-              icon="termination"
-              label="Termination Appeals"
-              active={activeSection === "termination"}
-              onClick={() => handleSectionChange("termination")}
             />
             <NavItem
               icon="servicefees"
@@ -445,9 +443,7 @@ const AdminDashboard = () => {
         <main className="flex-1 overflow-y-auto p-6 sm:p-8 lg:p-10">
           {activeSection === "home" && <HomeContent stats={stats} formatCurrency={formatCurrency} />}
           {activeSection === "cashout" && <CashoutApprovalsContent />}
-          {activeSection === "pending" && <PendingPayoutsContent />}
           {activeSection === "subscriptions" && <SubscriptionsContent />}
-          {activeSection === "termination" && <TerminationAppealsContent />}
           {activeSection === "servicefees" && <ServiceFeesContent />}
           {activeSection === "policy" && <PolicyContent />}
           {activeSection === "users" && <UsersContent />}
@@ -482,19 +478,9 @@ const NavItem = ({ icon, label, active, onClick }) => {
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
       </svg>
     ),
-    pending: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    ),
     subscriptions: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-      </svg>
-    ),
-    termination: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
       </svg>
     ),
     servicefees: (
@@ -623,22 +609,16 @@ const HomeContent = ({ stats, formatCurrency }) => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <BookingCard
           title="Today's Bookings"
-          count={stats.todayBookings}
+          bookings={stats.todayBookingsList || []}
           icon="calendar"
           emptyMessage="No bookings for today"
         />
         <BookingCard
           title="Upcoming Bookings"
-          count={stats.upcomingBookings}
+          bookings={stats.upcomingBookingsList || []}
           icon="clock"
           emptyMessage="No upcoming bookings"
         />
-      </div>
-
-      {/* Charts and Additional Info */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <MonthlyEarningsCard />
-        <RecentMessagesCard />
       </div>
 
       <div className="pt-4">
@@ -740,7 +720,7 @@ const StatCard = ({ label, value, subtitle, icon, color, delay }) => {
 };
 
 // Booking Card Component
-const BookingCard = ({ title, count, icon, emptyMessage }) => {
+const BookingCard = ({ title, bookings, icon, emptyMessage }) => {
   const icons = {
     calendar: (
       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -753,6 +733,32 @@ const BookingCard = ({ title, count, icon, emptyMessage }) => {
       </svg>
     )
   };
+
+  const formatDate = (date) => {
+    if (!date) return "N/A";
+    try {
+      const dateObj = date?.toDate ? date.toDate() : new Date(date);
+      if (isNaN(dateObj.getTime())) return "N/A";
+      return dateObj.toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric',
+        year: 'numeric'
+      });
+    } catch (error) {
+      return "N/A";
+    }
+  };
+
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(amount || 0);
+  };
+
+  const count = bookings?.length || 0;
 
   return (
     <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 animate-fadeInUp">
@@ -774,58 +780,48 @@ const BookingCard = ({ title, count, icon, emptyMessage }) => {
         </div>
       ) : (
         <div className="space-y-3">
-          {/* Booking items would go here */}
+          {bookings.map((booking) => (
+            <div
+              key={booking.id}
+              className="p-4 rounded-xl bg-gray-50 border border-gray-100 hover:bg-gray-100 transition-colors"
+            >
+              <div className="flex items-start justify-between mb-2">
+                <div className="flex-1">
+                  <h4 className="text-sm font-medium text-[#1C1C1E] mb-1">
+                    {booking.listingTitle || booking.listingId || "Booking"}
+                  </h4>
+                  <p className="text-xs text-[#8E8E93] font-light">
+                    {booking.guestEmail || booking.guestId || "Guest"}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-medium text-[#0071E3]">
+                    {formatCurrency(booking.totalPrice)}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 text-xs text-[#8E8E93] font-light">
+                {booking.checkIn && (
+                  <span className="flex items-center gap-1">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    {formatDate(booking.checkIn)}
+                  </span>
+                )}
+                {booking.checkOut && (
+                  <span className="flex items-center gap-1">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    {formatDate(booking.checkOut)}
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       )}
-    </div>
-  );
-};
-
-// Monthly Earnings Card
-const MonthlyEarningsCard = () => {
-  return (
-    <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 animate-fadeInUp">
-      <div className="flex items-center gap-4 mb-8">
-        <div className="w-12 h-12 rounded-xl bg-[#FF9500]/10 flex items-center justify-center text-[#FF9500]">
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        </div>
-        <div>
-          <h3 className="text-xl font-light text-[#1C1C1E] mb-1">Monthly Earnings</h3>
-          <p className="text-sm text-[#8E8E93] font-light">Revenue overview for this year</p>
-        </div>
-      </div>
-      <div className="h-64 flex items-center justify-center">
-        <p className="text-sm text-[#8E8E93] font-light">Chart placeholder - Coming soon</p>
-      </div>
-    </div>
-  );
-};
-
-// Recent Messages Card
-const RecentMessagesCard = () => {
-  return (
-    <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 animate-fadeInUp">
-      <div className="flex items-center gap-4 mb-8">
-        <div className="w-12 h-12 rounded-xl bg-[#AF52DE]/10 flex items-center justify-center text-[#AF52DE]">
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-          </svg>
-        </div>
-        <div>
-          <h3 className="text-xl font-light text-[#1C1C1E] mb-1">Recent Messages</h3>
-          <p className="text-sm text-[#8E8E93] font-light">Latest conversations</p>
-        </div>
-      </div>
-      <div className="text-center py-12">
-        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
-          <svg className="w-8 h-8 text-[#8E8E93]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-          </svg>
-        </div>
-        <p className="text-sm text-[#8E8E93] font-light">No messages yet</p>
-      </div>
     </div>
   );
 };
@@ -1352,7 +1348,7 @@ const MessagesContent = () => (
 const WithdrawalsContent = () => {
   const [withdrawals, setWithdrawals] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedFilter, setSelectedFilter] = useState("pending"); // pending, approved, completed, rejected
+  const [selectedFilter, setSelectedFilter] = useState("all"); // all, pending, completed, rejected
 
   useEffect(() => {
     fetchWithdrawals();
@@ -1408,11 +1404,47 @@ const WithdrawalsContent = () => {
       // IMPORTANT: When withdrawal is completed, automatically transfer money via PayPal Payouts API
       if (newStatus === "completed") {
         try {
-          // Call Cloud Function to process PayPal payout
+          // Fetch service fees to calculate deductions
+          let commissionPercentage = 0;
+          let withdrawalFee = 0;
+          try {
+            const serviceFeesQuery = query(
+              collection(db, "adminSettings"),
+              where("type", "==", "serviceFees")
+            );
+            const serviceFeesSnapshot = await getDocs(serviceFeesQuery);
+            if (!serviceFeesSnapshot.empty) {
+              const feesData = serviceFeesSnapshot.docs[0].data();
+              commissionPercentage = feesData.commissionPercentage || 0;
+              withdrawalFee = feesData.withdrawalFee || 0;
+            }
+          } catch (feeError) {
+            console.error("Error fetching service fees:", feeError);
+            // Continue with 0 fees if fetch fails
+          }
+
+          // Calculate fees
+          const requestedAmount = parseFloat(withdrawal.amount) || 0;
+          const commission = (requestedAmount * commissionPercentage) / 100;
+          const totalFees = commission + withdrawalFee;
+          const payoutAmount = requestedAmount - totalFees;
+
+          // Update withdrawal record with fee breakdown
+          await updateDoc(withdrawalRef, {
+            ...updateData,
+            requestedAmount: requestedAmount,
+            commissionPercentage: commissionPercentage,
+            commissionAmount: commission,
+            withdrawalFee: withdrawalFee,
+            totalFees: totalFees,
+            payoutAmount: payoutAmount
+          });
+
+          // Call Cloud Function to process PayPal payout with the calculated payout amount
           const payoutResult = await processPayPalPayout({
             withdrawalId: withdrawalId,
             recipientEmail: withdrawal.paypalEmail,
-            amount: withdrawal.amount.toFixed(2),
+            amount: Math.max(0, payoutAmount).toFixed(2), // Ensure non-negative
             currency: "USD"
           }, auth);
 
@@ -2082,6 +2114,22 @@ const ReportsContent = () => {
   const [generating, setGenerating] = useState(false);
   const [reportData, setReportData] = useState(null);
 
+  // Helper function to safely convert Firestore timestamps to Date objects
+  const safeDateConvert = (timestamp) => {
+    if (!timestamp) return null;
+    if (timestamp.toDate && typeof timestamp.toDate === 'function') {
+      return timestamp.toDate();
+    }
+    if (timestamp instanceof Date) {
+      return timestamp;
+    }
+    if (typeof timestamp === 'string' || typeof timestamp === 'number') {
+      const date = new Date(timestamp);
+      return isNaN(date.getTime()) ? null : date;
+    }
+    return null;
+  };
+
   const fetchReportData = async (reportType, filterStartDate = null, filterEndDate = null) => {
     try {
       const [listingsSnapshot, bookingsSnapshot, usersSnapshot, reviewsSnapshot, withdrawalsSnapshot, adminPaymentsSnapshot] = await Promise.all([
@@ -2100,20 +2148,36 @@ const ReportsContent = () => {
       const allWithdrawals = withdrawalsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       const allAdminPayments = adminPaymentsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      // Filter by date range if provided
-      const filterByDate = (item, dateField) => {
+      // Improved date filtering with proper handling
+      const filterByDate = (item, dateFields) => {
         if (!filterStartDate || !filterEndDate) return true;
-        const itemDate = item[dateField]?.toDate ? item[dateField].toDate() : new Date(item[dateField]);
-        return itemDate >= filterStartDate && itemDate <= filterEndDate;
+        
+        // Try multiple date fields (for different transaction types)
+        const dateFieldsArray = Array.isArray(dateFields) ? dateFields : [dateFields];
+        
+        for (const dateField of dateFieldsArray) {
+          const itemDate = safeDateConvert(item[dateField]);
+          if (itemDate) {
+            // Normalize dates to start of day for comparison
+            const itemDateOnly = new Date(itemDate.getFullYear(), itemDate.getMonth(), itemDate.getDate());
+            const startDateOnly = new Date(filterStartDate.getFullYear(), filterStartDate.getMonth(), filterStartDate.getDate());
+            const endDateOnly = new Date(filterEndDate.getFullYear(), filterEndDate.getMonth(), filterEndDate.getDate());
+            
+            if (itemDateOnly >= startDateOnly && itemDateOnly <= endDateOnly) {
+              return true;
+            }
+          }
+        }
+        return false;
       };
 
       return {
         listings: allListings,
-        bookings: allBookings.filter(b => filterByDate(b, "createdAt")),
+        bookings: allBookings.filter(b => filterByDate(b, ["createdAt", "checkIn", "checkOut"])),
         users: allUsers,
         reviews: allReviews.filter(r => filterByDate(r, "createdAt")),
-        withdrawals: allWithdrawals.filter(w => filterByDate(w, "createdAt")),
-        adminPayments: allAdminPayments.filter(p => filterByDate(p, "createdAt"))
+        withdrawals: allWithdrawals.filter(w => filterByDate(w, ["createdAt", "requestedAt", "processedAt"])),
+        adminPayments: allAdminPayments.filter(p => filterByDate(p, ["createdAt", "processedAt"]))
       };
     } catch (error) {
       console.error("Error fetching report data:", error);
@@ -2121,29 +2185,214 @@ const ReportsContent = () => {
     }
   };
 
-  const generateFinancialReport = (data) => {
-    const confirmedBookings = data.bookings.filter(b => b.status === "confirmed" && b.paymentStatus === "paid");
-    const totalRevenue = confirmedBookings.reduce((sum, b) => sum + (b.totalPrice || 0), 0);
-    const totalWithdrawals = data.withdrawals
-      .filter(w => w.status === "completed")
-      .reduce((sum, w) => sum + (w.amount || 0), 0);
-    const totalAdminPayments = data.adminPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+  const generateFinancialReport = (data, dateRange = null) => {
+    try {
+      // Create a map of userId -> firstName for quick lookup
+      const userFirstNameMap = new Map();
+      (data.users || []).forEach(user => {
+        if (user.id) {
+          const firstName = user.firstName || user.displayName?.split(' ')[0] || "User";
+          userFirstNameMap.set(user.id, firstName);
+        }
+      });
 
-    return {
-      title: "Financial Report",
-      generatedAt: new Date().toLocaleString(),
-      summary: {
-        totalRevenue: totalRevenue,
-        totalWithdrawals: totalWithdrawals,
-        totalAdminPayments: totalAdminPayments,
-        netRevenue: totalRevenue - totalWithdrawals
-      },
-      bookings: confirmedBookings.length,
-      withdrawals: data.withdrawals.filter(w => w.status === "completed").length
-    };
+      // Helper function to get first name by user ID
+      const getFirstName = (userId) => {
+        if (!userId) return "User";
+        return userFirstNameMap.get(userId) || "User";
+      };
+
+      // Safely filter and process bookings
+      const confirmedBookings = (data.bookings || []).filter(b => {
+        const status = (b.status || "").toLowerCase();
+        const paymentStatus = (b.paymentStatus || "").toLowerCase();
+        return status === "confirmed" && paymentStatus === "paid";
+      });
+
+      // Calculate revenue metrics with proper null handling
+      const totalRevenue = confirmedBookings.reduce((sum, b) => {
+        const price = parseFloat(b.totalPrice) || 0;
+        return sum + price;
+      }, 0);
+
+      const averageBookingValue = confirmedBookings.length > 0 
+        ? totalRevenue / confirmedBookings.length 
+        : 0;
+
+      // Process withdrawals with proper filtering
+      const completedWithdrawals = (data.withdrawals || []).filter(w => {
+        const status = (w.status || "").toLowerCase();
+        return status === "completed";
+      });
+
+      const totalWithdrawals = completedWithdrawals.reduce((sum, w) => {
+        const amount = parseFloat(w.amount) || 0;
+        return sum + amount;
+      }, 0);
+
+      // Process admin payments
+      const totalAdminPayments = (data.adminPayments || []).reduce((sum, p) => {
+        const amount = parseFloat(p.amount) || 0;
+        return sum + amount;
+      }, 0);
+
+      // Calculate net metrics
+      const totalExpenses = totalWithdrawals + totalAdminPayments;
+      const netRevenue = totalRevenue - totalExpenses;
+      const profitMargin = totalRevenue > 0 ? (netRevenue / totalRevenue) * 100 : 0;
+
+      // Prepare comprehensive transactions array
+      const transactions = [];
+      
+      // Add booking payments (revenue) with enhanced details
+      confirmedBookings.forEach(booking => {
+        const bookingDate = safeDateConvert(booking.createdAt) || 
+                           safeDateConvert(booking.checkIn) || 
+                           new Date();
+        
+        const guestFirstName = getFirstName(booking.guestId);
+        const listingTitle = booking.listingTitle || booking.listingId || "Listing";
+        
+        transactions.push({
+          id: booking.id || `booking-${Date.now()}-${Math.random()}`,
+          type: "Revenue",
+          category: "Booking Payment",
+          description: `Booking from ${guestFirstName} - ${listingTitle}`,
+          amount: parseFloat(booking.totalPrice) || 0,
+          date: bookingDate,
+          status: "completed",
+          reference: booking.id,
+          bookingId: booking.id,
+          guestEmail: booking.guestEmail || "N/A",
+          listingId: booking.listingId || "N/A"
+        });
+      });
+
+      // Add withdrawals (outgoing) with enhanced details
+      completedWithdrawals.forEach(withdrawal => {
+        const withdrawalDate = safeDateConvert(withdrawal.processedAt) || 
+                              safeDateConvert(withdrawal.requestedAt) || 
+                              safeDateConvert(withdrawal.createdAt) || 
+                              new Date();
+        
+        const hostFirstName = getFirstName(withdrawal.hostId) || 
+                             withdrawal.hostName?.split(' ')[0] || 
+                             "Host";
+        
+        transactions.push({
+          id: withdrawal.id || `withdrawal-${Date.now()}-${Math.random()}`,
+          type: "Expense",
+          category: "Host Payout",
+          description: `Payout to ${hostFirstName}`,
+          amount: -(parseFloat(withdrawal.amount) || 0),
+          date: withdrawalDate,
+          status: "completed",
+          reference: withdrawal.id,
+          withdrawalId: withdrawal.id,
+          paypalEmail: withdrawal.paypalEmail || "N/A"
+        });
+      });
+
+      // Add admin payments (outgoing) with enhanced details
+      (data.adminPayments || []).forEach(payment => {
+        const paymentDate = safeDateConvert(payment.processedAt) || 
+                           safeDateConvert(payment.createdAt) || 
+                           new Date();
+        
+        transactions.push({
+          id: payment.id || `admin-payment-${Date.now()}-${Math.random()}`,
+          type: "Expense",
+          category: "Admin Payment",
+          description: `Admin Payment${payment.bookingId ? ` - Booking ${payment.bookingId}` : ""}`,
+          amount: -(parseFloat(payment.amount) || 0),
+          date: paymentDate,
+          status: (payment.status || "completed").toLowerCase(),
+          reference: payment.id,
+          paymentId: payment.id,
+          bookingId: payment.bookingId || "N/A"
+        });
+      });
+
+      // Sort transactions by date (newest first) with proper date handling
+      transactions.sort((a, b) => {
+        const dateA = a.date instanceof Date ? a.date.getTime() : 0;
+        const dateB = b.date instanceof Date ? b.date.getTime() : 0;
+        return dateB - dateA;
+      });
+
+      // Calculate transaction statistics
+      const revenueTransactions = transactions.filter(t => t.amount > 0);
+      const expenseTransactions = transactions.filter(t => t.amount < 0);
+      const totalTransactions = transactions.length;
+
+      // Get date range for report period
+      const reportDateRange = transactions.length > 0 
+        ? {
+            earliest: transactions[transactions.length - 1]?.date || new Date(),
+            latest: transactions[0]?.date || new Date()
+          }
+        : null;
+
+      return {
+        title: "Financial Report",
+        generatedAt: new Date().toLocaleString('en-US', { 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric', 
+          hour: '2-digit', 
+          minute: '2-digit' 
+        }),
+        reportPeriod: reportDateRange,
+        dateRange: dateRange,
+        summary: {
+          totalRevenue: totalRevenue,
+          totalExpenses: totalExpenses,
+          totalWithdrawals: totalWithdrawals,
+          totalAdminPayments: totalAdminPayments,
+          netRevenue: netRevenue,
+          profitMargin: profitMargin,
+          averageBookingValue: averageBookingValue
+        },
+        metrics: {
+          totalBookings: confirmedBookings.length,
+          totalWithdrawals: completedWithdrawals.length,
+          totalAdminPayments: (data.adminPayments || []).length,
+          totalTransactions: totalTransactions,
+          revenueTransactions: revenueTransactions.length,
+          expenseTransactions: expenseTransactions.length
+        },
+        transactions: transactions
+      };
+    } catch (error) {
+      console.error("Error generating financial report:", error);
+      // Return empty report structure on error
+        return {
+          title: "Financial Report",
+          generatedAt: new Date().toLocaleString(),
+          dateRange: dateRange,
+          summary: {
+          totalRevenue: 0,
+          totalExpenses: 0,
+          totalWithdrawals: 0,
+          totalAdminPayments: 0,
+          netRevenue: 0,
+          profitMargin: 0,
+          averageBookingValue: 0
+        },
+        metrics: {
+          totalBookings: 0,
+          totalWithdrawals: 0,
+          totalAdminPayments: 0,
+          totalTransactions: 0,
+          revenueTransactions: 0,
+          expenseTransactions: 0
+        },
+        transactions: []
+      };
+    }
   };
 
-  const generateUserReport = (data) => {
+  const generateUserReport = (data, dateRange = null) => {
     const hosts = data.users.filter(u => {
       const roles = u.roles || (u.role ? [u.role] : []);
       return roles.includes("host");
@@ -2156,6 +2405,7 @@ const ReportsContent = () => {
     return {
       title: "User Report",
       generatedAt: new Date().toLocaleString(),
+      dateRange: dateRange,
       summary: {
         totalUsers: data.users.length,
         totalHosts: hosts.length,
@@ -2165,7 +2415,7 @@ const ReportsContent = () => {
     };
   };
 
-  const generateListingPerformanceReport = (data) => {
+  const generateListingPerformanceReport = (data, dateRange = null) => {
     const listingsWithStats = data.listings.map(listing => {
       const listingBookings = data.bookings.filter(b => b.listingId === listing.id);
       const listingReviews = data.reviews.filter(r => r.listingId === listing.id && r.status === "approved");
@@ -2191,6 +2441,7 @@ const ReportsContent = () => {
     return {
       title: "Listing Performance Report",
       generatedAt: new Date().toLocaleString(),
+      dateRange: dateRange,
       summary: {
         totalListings: data.listings.length,
         activeListings: data.listings.filter(l => l.status === "active").length
@@ -2205,42 +2456,66 @@ const ReportsContent = () => {
     const pageHeight = pdf.internal.pageSize.getHeight();
     let yPosition = 0;
     const margin = 20;
-    const lineHeight = 7;
-    const sectionSpacing = 12;
+    const lineHeight = 8;
+    const sectionSpacing = 15;
     
-    // Brand colors
-    const primaryBlue = [0, 113, 227]; // #0071E3
-    const darkBlue = [0, 81, 208]; // #0051D0
-    const darkGray = [28, 28, 30]; // #1C1C1E
-    const lightGray = [142, 142, 147]; // #8E8E93
-    const bgGray = [245, 245, 247]; // #F5F5F7
+    // Professional white and blue color scheme
+    const navyBlue = [0, 51, 102]; // #003366 - Deep professional blue
+    const royalBlue = [25, 118, 210]; // #1976D2 - Primary blue
+    const lightBlue = [227, 242, 253]; // #E3F2FD - Light blue background
+    const accentBlue = [13, 71, 161]; // #0D47A1 - Darker accent
+    const textDark = [33, 33, 33]; // #212121 - Dark text
+    const textMedium = [97, 97, 97]; // #616161 - Medium gray text
+    const textLight = [158, 158, 158]; // #9E9E9E - Light gray text
+    const white = [255, 255, 255]; // Pure white
+    const borderGray = [224, 224, 224]; // #E0E0E0 - Subtle borders
 
     // Helper function to add header on each page
     const addHeader = () => {
-      // Header background with brand color
-      pdf.setFillColor(...primaryBlue);
-      pdf.rect(0, 0, pageWidth, 50, "F");
+      // Clean white background with blue accent bar
+      pdf.setFillColor(...white);
+      pdf.rect(0, 0, pageWidth, 70, "F");
       
-      // Voyago logo/brand text
-      pdf.setTextColor(255, 255, 255);
-      pdf.setFontSize(24);
+      // Blue accent bar at top
+      pdf.setFillColor(...navyBlue);
+      pdf.rect(0, 0, pageWidth, 8, "F");
+      
+      // Voyago brand text in navy blue
+      pdf.setTextColor(...navyBlue);
+      pdf.setFontSize(28);
       pdf.setFont("helvetica", "bold");
-      pdf.text("Voyago", margin, 20);
+      pdf.text("Voyago", margin, 25);
       
-      // Subtitle
-      pdf.setFontSize(10);
+      // Elegant subtitle
+      pdf.setFontSize(11);
       pdf.setFont("helvetica", "normal");
-      pdf.setTextColor(255, 255, 255, 0.8);
-      pdf.text("Admin Report", margin, 30);
+      pdf.setTextColor(...textMedium);
+      pdf.text("Administrative Report", margin, 35);
       
-      // Blue accent line
-      pdf.setDrawColor(...darkBlue);
-      pdf.setLineWidth(2);
-      pdf.line(0, 50, pageWidth, 50);
+      // Professional blue underline
+      pdf.setDrawColor(...royalBlue);
+      pdf.setLineWidth(1.5);
+      pdf.line(margin, 40, margin + 80, 40);
+      
+      // Date and report type in top right
+      pdf.setFontSize(9);
+      pdf.setTextColor(...textLight);
+      pdf.text(reportType, pageWidth - margin, 25, { align: "right" });
+      pdf.text(`Generated: ${report.generatedAt}`, pageWidth - margin, 35, { align: "right" });
+      if (report.dateRange) {
+        pdf.text(`Period: ${report.dateRange.start} - ${report.dateRange.end}`, pageWidth - margin, 45, { align: "right" });
+      } else {
+        pdf.text(`Period: All Time`, pageWidth - margin, 45, { align: "right" });
+      }
+      
+      // Subtle separator line
+      pdf.setDrawColor(...borderGray);
+      pdf.setLineWidth(0.5);
+      pdf.line(margin, 65, pageWidth - margin, 65);
       
       // Reset text color
-      pdf.setTextColor(...darkGray);
-      yPosition = 65;
+      pdf.setTextColor(...textDark);
+      yPosition = 80;
     };
 
     // Helper function to add a new page if needed
@@ -2256,137 +2531,441 @@ const ReportsContent = () => {
     // Add header to first page
     addHeader();
 
-    // Report Title
-    pdf.setFontSize(22);
+    // Report Title with professional styling
+    pdf.setFontSize(20);
     pdf.setFont("helvetica", "bold");
-    pdf.setTextColor(...darkGray);
+    pdf.setTextColor(...navyBlue);
     pdf.text(report.title, margin, yPosition);
-    yPosition += 12;
+    yPosition += sectionSpacing;
 
-    // Generated date with icon-like styling
-    pdf.setFontSize(9);
-    pdf.setFont("helvetica", "normal");
-    pdf.setTextColor(...lightGray);
-    pdf.text(`Generated: ${report.generatedAt}`, margin, yPosition);
-    yPosition += sectionSpacing + 5;
+    // Display date range if available
+    if (report.dateRange) {
+      checkPageBreak(15);
+      pdf.setFontSize(10);
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...textMedium);
+      pdf.text(`Report Period: ${report.dateRange.start} - ${report.dateRange.end}`, margin, yPosition);
+      yPosition += lineHeight + 5;
+    } else {
+      checkPageBreak(15);
+      pdf.setFontSize(10);
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...textMedium);
+      pdf.text("Report Period: All Time", margin, yPosition);
+      yPosition += lineHeight + 5;
+    }
 
-    // Summary Section with styled box
-    checkPageBreak(50);
+    // Summary Section with professional white box and blue accent
+    checkPageBreak(100);
     const summaryStartY = yPosition;
-    pdf.setFillColor(...bgGray);
-    pdf.roundedRect(margin, yPosition - 5, pageWidth - (margin * 2), 45, 3, 3, "F");
-    
-    pdf.setFontSize(14);
-    pdf.setFont("helvetica", "bold");
-    pdf.setTextColor(...darkGray);
-    pdf.text("Summary", margin + 8, yPosition + 5);
-    yPosition += 12;
-
-    pdf.setFontSize(10);
-    pdf.setFont("helvetica", "normal");
     
     if (reportType === "Financial Report") {
       const formatCurrency = (amount) => {
+        const numAmount = parseFloat(amount) || 0;
         return new Intl.NumberFormat('en-US', {
           style: 'currency',
-          currency: 'USD'
-        }).format(amount);
+          currency: 'USD',
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        }).format(numAmount);
       };
 
-      pdf.setTextColor(...darkGray);
-      pdf.text(`Total Revenue:`, margin + 10, yPosition);
+      // Calculate summary box height based on content
+      let summaryBoxHeight = 20; // Base height for title
+      summaryBoxHeight += 10; // Title spacing
+      summaryBoxHeight += (lineHeight + 2) * 4; // 4 main lines (Revenue, Expenses, Host Payouts, Admin Payments)
+      summaryBoxHeight += 5; // Divider spacing
+      summaryBoxHeight += (lineHeight + 3); // Net Revenue
+      if (report.summary?.profitMargin !== undefined) summaryBoxHeight += (lineHeight + 1);
+      if (report.summary?.averageBookingValue !== undefined) summaryBoxHeight += (lineHeight + 1);
+      summaryBoxHeight += 25; // Info box
+      summaryBoxHeight += 5; // Bottom padding
+      
+      // Draw summary box once with calculated height
+      pdf.setFillColor(...white);
+      pdf.setDrawColor(...borderGray);
+      pdf.setLineWidth(0.5);
+      pdf.roundedRect(margin, yPosition - 8, pageWidth - (margin * 2), summaryBoxHeight, 4, 4, "FD");
+      
+      // Blue accent bar on left side
+      pdf.setFillColor(...royalBlue);
+      pdf.rect(margin, yPosition - 8, 4, summaryBoxHeight, "F");
+      
+      // Section title with blue accent
+      pdf.setFontSize(15);
       pdf.setFont("helvetica", "bold");
-      pdf.setTextColor(...primaryBlue);
-      pdf.text(formatCurrency(report.summary.totalRevenue), margin + 60, yPosition);
-      yPosition += lineHeight;
+      pdf.setTextColor(...navyBlue);
+      pdf.text("Executive Summary", margin + 12, yPosition + 3);
+      
+      // Subtle underline
+      pdf.setDrawColor(...royalBlue);
+      pdf.setLineWidth(0.8);
+      pdf.line(margin + 12, yPosition + 5, margin + 100, yPosition + 5);
+      
+      yPosition += 12;
+
+      pdf.setFontSize(10);
+      pdf.setFont("helvetica", "normal");
+
+      // Professional key-value pairs with better spacing and right-aligned values
+      const valueX = pageWidth - margin - 12; // Right-align values
+      
+      pdf.setTextColor(...textDark);
+      pdf.setFont("helvetica", "normal");
+      pdf.text(`Total Revenue:`, margin + 12, yPosition);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...royalBlue);
+      pdf.text(formatCurrency(report.summary?.totalRevenue || 0), valueX, yPosition, { align: "right" });
+      yPosition += lineHeight + 2;
       
       pdf.setFont("helvetica", "normal");
-      pdf.setTextColor(...darkGray);
-      pdf.text(`Total Withdrawals:`, margin + 10, yPosition);
-      pdf.text(formatCurrency(report.summary.totalWithdrawals), margin + 60, yPosition);
-      yPosition += lineHeight;
+      pdf.setTextColor(...textDark);
+      pdf.text(`Total Expenses:`, margin + 12, yPosition);
+      pdf.setTextColor(...textMedium);
+      pdf.text(formatCurrency(report.summary?.totalExpenses || 0), valueX, yPosition, { align: "right" });
+      yPosition += lineHeight + 2;
       
-      pdf.text(`Total Admin Payments:`, margin + 10, yPosition);
-      pdf.text(formatCurrency(report.summary.totalAdminPayments), margin + 60, yPosition);
-      yPosition += lineHeight;
+      pdf.setTextColor(...textDark);
+      pdf.text(`  • Host Payouts:`, margin + 18, yPosition);
+      pdf.setTextColor(...textMedium);
+      pdf.text(formatCurrency(report.summary?.totalWithdrawals || 0), valueX, yPosition, { align: "right" });
+      yPosition += lineHeight + 1;
+      
+      pdf.setTextColor(...textDark);
+      pdf.text(`  • Admin Payments:`, margin + 18, yPosition);
+      pdf.setTextColor(...textMedium);
+      pdf.text(formatCurrency(report.summary?.totalAdminPayments || 0), valueX, yPosition, { align: "right" });
+      yPosition += lineHeight + 2;
+      
+      // Net Revenue highlighted with divider
+      pdf.setDrawColor(...royalBlue);
+      pdf.setLineWidth(0.5);
+      pdf.line(margin + 12, yPosition - 2, pageWidth - margin - 12, yPosition - 2);
+      yPosition += 3;
       
       pdf.setFont("helvetica", "bold");
-      pdf.setTextColor(...darkGray);
-      pdf.text(`Net Revenue:`, margin + 10, yPosition);
-      pdf.setTextColor(...primaryBlue);
-      pdf.text(formatCurrency(report.summary.netRevenue), margin + 60, yPosition);
-      yPosition += lineHeight;
+      pdf.setTextColor(...navyBlue);
+      pdf.text(`Net Revenue:`, margin + 12, yPosition);
       
+      // Color code Net Revenue: blue for positive, darker blue for negative
+      const netRevenue = parseFloat(report.summary?.netRevenue) || 0;
+      const netRevenueColor = netRevenue >= 0 ? royalBlue : accentBlue;
+      pdf.setTextColor(...netRevenueColor);
+      pdf.setFontSize(12);
+      pdf.text(formatCurrency(netRevenue), valueX, yPosition, { align: "right" });
+      pdf.setFontSize(10);
+      yPosition += lineHeight + 3;
+      
+      // Additional financial metrics
+      if (report.summary?.profitMargin !== undefined) {
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(9);
+        pdf.setTextColor(...textMedium);
+        pdf.text(`Profit Margin: ${(report.summary.profitMargin || 0).toFixed(2)}%`, margin + 12, yPosition);
+        yPosition += lineHeight + 1;
+      }
+      
+      if (report.summary?.averageBookingValue !== undefined) {
+        pdf.text(`Average Booking Value: ${formatCurrency(report.summary.averageBookingValue || 0)}`, margin + 12, yPosition);
+        yPosition += lineHeight + 1;
+      }
+      
+      // Metrics info box
       pdf.setFont("helvetica", "normal");
-      pdf.setTextColor(...darkGray);
-      pdf.text(`Total Bookings: ${report.bookings}`, margin + 10, yPosition);
-      yPosition += lineHeight;
-      pdf.text(`Completed Withdrawals: ${report.withdrawals}`, margin + 10, yPosition);
+      pdf.setFontSize(9);
+      pdf.setTextColor(...textMedium);
+      
+      const infoBoxY = yPosition - 2;
+      const infoBoxHeight = 20;
+      pdf.setFillColor(...lightBlue);
+      pdf.setDrawColor(...borderGray);
+      pdf.setLineWidth(0.3);
+      pdf.roundedRect(margin + 12, infoBoxY, pageWidth - (margin * 2) - 12, infoBoxHeight, 2, 2, "FD");
+      
+      if (report.metrics) {
+        pdf.text(`Total Bookings: ${report.metrics.totalBookings || 0}`, margin + 18, infoBoxY + 5);
+        pdf.text(`Revenue Transactions: ${report.metrics.revenueTransactions || 0}`, margin + 18, infoBoxY + 10);
+        pdf.text(`Expense Transactions: ${report.metrics.expenseTransactions || 0}`, margin + 18, infoBoxY + 15);
+      } else {
+        // Fallback for old report structure
+        pdf.text(`Total Bookings: ${report.bookings || 0}`, margin + 18, infoBoxY + 5);
+        pdf.text(`Completed Withdrawals: ${report.withdrawals || 0}`, margin + 18, infoBoxY + 10);
+      }
+      
+      yPosition += infoBoxHeight + 3;
+      pdf.setFontSize(10);
     } else if (reportType === "User Report") {
-      pdf.setTextColor(...darkGray);
-      pdf.text(`Total Users:`, margin + 10, yPosition);
+      // Draw summary box for User Report
+      const userSummaryHeight = 50;
+      pdf.setFillColor(...white);
+      pdf.setDrawColor(...borderGray);
+      pdf.setLineWidth(0.5);
+      pdf.roundedRect(margin, yPosition - 8, pageWidth - (margin * 2), userSummaryHeight, 4, 4, "FD");
+      
+      pdf.setFillColor(...royalBlue);
+      pdf.rect(margin, yPosition - 8, 4, userSummaryHeight, "F");
+      
+      pdf.setFontSize(15);
       pdf.setFont("helvetica", "bold");
-      pdf.setTextColor(...primaryBlue);
-      pdf.text(report.summary.totalUsers.toString(), margin + 60, yPosition);
-      yPosition += lineHeight;
+      pdf.setTextColor(...navyBlue);
+      pdf.text("Executive Summary", margin + 12, yPosition + 3);
+      
+      pdf.setDrawColor(...royalBlue);
+      pdf.setLineWidth(0.8);
+      pdf.line(margin + 12, yPosition + 5, margin + 100, yPosition + 5);
+      
+      yPosition += 12;
+      pdf.setFontSize(10);
+      pdf.setFont("helvetica", "normal");
+      
+      pdf.setTextColor(...textDark);
+      pdf.text(`Total Users:`, margin + 12, yPosition);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...royalBlue);
+      pdf.text(report.summary.totalUsers.toString(), margin + 75, yPosition);
+      yPosition += lineHeight + 2;
       
       pdf.setFont("helvetica", "normal");
-      pdf.setTextColor(...darkGray);
-      pdf.text(`Total Hosts:`, margin + 10, yPosition);
-      pdf.text(report.summary.totalHosts.toString(), margin + 60, yPosition);
-      yPosition += lineHeight;
+      pdf.setTextColor(...textDark);
+      pdf.text(`Total Hosts:`, margin + 12, yPosition);
+      pdf.setTextColor(...textMedium);
+      pdf.text(report.summary.totalHosts.toString(), margin + 75, yPosition);
+      yPosition += lineHeight + 2;
       
-      pdf.text(`Total Guests:`, margin + 10, yPosition);
-      pdf.text(report.summary.totalGuests.toString(), margin + 60, yPosition);
+      pdf.setTextColor(...textDark);
+      pdf.text(`Total Guests:`, margin + 12, yPosition);
+      pdf.setTextColor(...textMedium);
+      pdf.text(report.summary.totalGuests.toString(), margin + 75, yPosition);
     } else if (reportType === "Listing Performance Report") {
-      pdf.setTextColor(...darkGray);
-      pdf.text(`Total Listings:`, margin + 10, yPosition);
+      // Draw summary box for Listing Performance Report
+      const listingSummaryHeight = 50;
+      pdf.setFillColor(...white);
+      pdf.setDrawColor(...borderGray);
+      pdf.setLineWidth(0.5);
+      pdf.roundedRect(margin, yPosition - 8, pageWidth - (margin * 2), listingSummaryHeight, 4, 4, "FD");
+      
+      pdf.setFillColor(...royalBlue);
+      pdf.rect(margin, yPosition - 8, 4, listingSummaryHeight, "F");
+      
+      pdf.setFontSize(15);
       pdf.setFont("helvetica", "bold");
-      pdf.setTextColor(...primaryBlue);
-      pdf.text(report.summary.totalListings.toString(), margin + 60, yPosition);
-      yPosition += lineHeight;
+      pdf.setTextColor(...navyBlue);
+      pdf.text("Executive Summary", margin + 12, yPosition + 3);
+      
+      pdf.setDrawColor(...royalBlue);
+      pdf.setLineWidth(0.8);
+      pdf.line(margin + 12, yPosition + 5, margin + 100, yPosition + 5);
+      
+      yPosition += 12;
+      pdf.setFontSize(10);
+      pdf.setFont("helvetica", "normal");
+      
+      pdf.setTextColor(...textDark);
+      pdf.text(`Total Listings:`, margin + 12, yPosition);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...royalBlue);
+      pdf.text(report.summary.totalListings.toString(), margin + 75, yPosition);
+      yPosition += lineHeight + 2;
       
       pdf.setFont("helvetica", "normal");
-      pdf.setTextColor(...darkGray);
-      pdf.text(`Active Listings:`, margin + 10, yPosition);
-      pdf.text(report.summary.activeListings.toString(), margin + 60, yPosition);
+      pdf.setTextColor(...textDark);
+      pdf.text(`Active Listings:`, margin + 12, yPosition);
+      pdf.setTextColor(...textMedium);
+      pdf.text(report.summary.activeListings.toString(), margin + 75, yPosition);
     }
 
-    yPosition += sectionSpacing + 5;
+    yPosition += sectionSpacing + 10;
 
     // Detailed Data Section
-    if (reportType === "User Report" && report.users && report.users.length > 0) {
-      checkPageBreak(40);
+    // Transactions Table for Financial Report
+    if (reportType === "Financial Report" && report.transactions && report.transactions.length > 0) {
+      checkPageBreak(50);
+      
+      // Section title with proper spacing
       pdf.setFontSize(16);
       pdf.setFont("helvetica", "bold");
-      pdf.setTextColor(...darkGray);
-      pdf.text("User Details", margin, yPosition);
-      yPosition += 10;
+      pdf.setTextColor(...navyBlue);
+      pdf.text("Transaction History", margin, yPosition);
+      yPosition += 15;
 
       pdf.setFontSize(9);
       pdf.setFont("helvetica", "normal");
       
-      // Table header with brand color
-      pdf.setFillColor(...primaryBlue);
-      pdf.roundedRect(margin, yPosition - 6, pageWidth - (margin * 2), 10, 2, 2, "F");
+      const formatCurrency = (amount) => {
+        const numAmount = parseFloat(amount) || 0;
+        return new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: 'USD',
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        }).format(numAmount);
+      };
+
+      const formatDate = (date) => {
+        if (!date) return "N/A";
+        try {
+          let dateObj;
+          if (date instanceof Date) {
+            dateObj = date;
+          } else if (date.toDate && typeof date.toDate === 'function') {
+            dateObj = date.toDate();
+          } else {
+            dateObj = new Date(date);
+          }
+          
+          if (isNaN(dateObj.getTime())) return "N/A";
+          
+          return dateObj.toLocaleDateString('en-US', { 
+            month: 'short', 
+            day: 'numeric', 
+            year: 'numeric' 
+          });
+        } catch (error) {
+          return "N/A";
+        }
+      };
+      
+      // Define column positions for better spacing
+      const colDate = margin + 6;
+      const colType = margin + 35;
+      const colDescription = margin + 58;
+      const colAmount = pageWidth - margin - 55;
+      const colStatus = pageWidth - margin - 5;
+      const descriptionMaxWidth = colAmount - colDescription - 8; // Leave 8px gap before amount
+      
+      // Professional table header with navy blue background
+      pdf.setFillColor(...navyBlue);
+      pdf.roundedRect(margin, yPosition - 7, pageWidth - (margin * 2), 12, 3, 3, "F");
       pdf.setFont("helvetica", "bold");
-      pdf.setTextColor(255, 255, 255);
-      pdf.text("Email", margin + 5, yPosition);
-      pdf.text("Role", margin + 85, yPosition);
-      pdf.text("Joined", margin + 135, yPosition);
-      yPosition += 12;
+      pdf.setTextColor(...white);
+      pdf.setFontSize(9);
+      pdf.text("Date", colDate, yPosition);
+      pdf.text("Type", colType, yPosition);
+      pdf.text("Description", colDescription, yPosition);
+      pdf.text("Amount", colAmount, yPosition, { align: "right" });
+      pdf.text("Status", colStatus, yPosition, { align: "right" });
+      yPosition += 14;
       pdf.setFont("helvetica", "normal");
-      pdf.setTextColor(...darkGray);
+
+      // Limit to first 100 transactions to avoid PDF being too long
+      const transactionsToShow = (report.transactions || []).slice(0, 100);
+      transactionsToShow.forEach((transaction, index) => {
+        checkPageBreak(12);
+        
+        // White background with subtle border for each row
+        pdf.setFillColor(...white);
+        pdf.setDrawColor(...borderGray);
+        pdf.setLineWidth(0.3);
+        pdf.roundedRect(margin, yPosition - 6, pageWidth - (margin * 2), lineHeight + 3, 2, 2, "FD");
+        
+        // Light blue background for alternate rows
+        if (index % 2 === 0) {
+          pdf.setFillColor(...lightBlue);
+          pdf.roundedRect(margin, yPosition - 6, pageWidth - (margin * 2), lineHeight + 3, 2, 2, "F");
+        }
+        
+        // Date - safely format (smaller font for compact display)
+        pdf.setTextColor(...textMedium);
+        pdf.setFontSize(8);
+        pdf.text(formatDate(transaction.date), colDate, yPosition);
+        
+        // Type with color coding
+        const transactionType = transaction.type || "N/A";
+        const typeColor = transactionType === "Revenue" ? royalBlue : (transaction.amount < 0 ? accentBlue : textDark);
+        pdf.setTextColor(...typeColor);
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(8);
+        pdf.text(transactionType, colType, yPosition);
+        pdf.setFont("helvetica", "normal");
+        
+        // Description (truncate to fit available space)
+        const description = (transaction.description || "N/A");
+        // Calculate max characters that fit in the available width (approx 4.5px per character at 8pt font)
+        const maxChars = Math.floor(descriptionMaxWidth / 4.5);
+        const truncatedDesc = description.length > maxChars 
+          ? description.substring(0, maxChars - 3) + "..." 
+          : description;
+        pdf.setTextColor(...textDark);
+        pdf.setFontSize(8);
+        pdf.text(truncatedDesc, colDescription, yPosition);
+        
+        // Amount with color coding (blue for positive, darker blue for negative)
+        const amount = parseFloat(transaction.amount) || 0;
+        const amountColor = amount >= 0 ? royalBlue : accentBlue;
+        pdf.setTextColor(...amountColor);
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(8);
+        // Format amount - formatCurrency already handles the sign correctly
+        const amountText = formatCurrency(Math.abs(amount));
+        const signedAmountText = amount >= 0 ? `+${amountText}` : `-${amountText}`;
+        pdf.text(signedAmountText, colAmount, yPosition, { align: "right" });
+        pdf.setFont("helvetica", "normal");
+        
+        // Status - properly capitalize (smaller font)
+        pdf.setTextColor(...textMedium);
+        pdf.setFontSize(7);
+        const status = (transaction.status || "N/A").toString();
+        const statusText = status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+        pdf.text(statusText, colStatus, yPosition, { align: "right" });
+        
+        yPosition += lineHeight + 4;
+      });
+
+      if ((report.transactions || []).length > 100) {
+        yPosition += 5;
+        pdf.setFontSize(8);
+        pdf.setTextColor(...textLight);
+        pdf.text(`(Showing first 100 of ${report.transactions.length} transactions)`, margin, yPosition);
+        pdf.setTextColor(...textDark);
+        pdf.setFontSize(9);
+      }
+    } else if (reportType === "Financial Report") {
+      // No transactions message
+      checkPageBreak(30);
+      pdf.setFontSize(12);
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...textMedium);
+      pdf.text("No transactions found for the selected period.", margin, yPosition);
+      yPosition += lineHeight + 5;
+    } else if (reportType === "User Report" && report.users && report.users.length > 0) {
+      checkPageBreak(50);
+      
+      // Section title
+      pdf.setFontSize(16);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...navyBlue);
+      pdf.text("User Details", margin, yPosition);
+      yPosition += 12;
+
+      pdf.setFontSize(9);
+      pdf.setFont("helvetica", "normal");
+      
+      // Professional table header with navy blue background
+      pdf.setFillColor(...navyBlue);
+      pdf.roundedRect(margin, yPosition - 7, pageWidth - (margin * 2), 12, 3, 3, "F");
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...white);
+      pdf.text("Email", margin + 6, yPosition);
+      pdf.text("Role", margin + 90, yPosition);
+      pdf.text("Joined", margin + 140, yPosition);
+      yPosition += 14;
+      pdf.setFont("helvetica", "normal");
 
       // Limit to first 50 users to avoid PDF being too long
       const usersToShow = report.users.slice(0, 50);
       usersToShow.forEach((user, index) => {
-        checkPageBreak(10);
+        checkPageBreak(12);
         
-        // Alternate row background
+        // White background with subtle border for each row
+        pdf.setFillColor(...white);
+        pdf.setDrawColor(...borderGray);
+        pdf.setLineWidth(0.3);
+        pdf.roundedRect(margin, yPosition - 6, pageWidth - (margin * 2), lineHeight + 3, 2, 2, "FD");
+        
+        // Light blue background for alternate rows
         if (index % 2 === 0) {
-          pdf.setFillColor(...bgGray);
-          pdf.rect(margin, yPosition - 5, pageWidth - (margin * 2), lineHeight + 2, "F");
+          pdf.setFillColor(...lightBlue);
+          pdf.roundedRect(margin, yPosition - 6, pageWidth - (margin * 2), lineHeight + 3, 2, 2, "F");
         }
         
         const roles = user.roles || (user.role ? [user.role] : []);
@@ -2397,51 +2976,47 @@ const ReportsContent = () => {
           ? new Date(user.createdAt).toLocaleDateString()
           : "N/A";
 
-        pdf.setTextColor(...darkGray);
-        pdf.text(user.email || "N/A", margin + 5, yPosition);
-        pdf.text(roleText, margin + 85, yPosition);
-        pdf.setTextColor(...lightGray);
-        pdf.text(joinedDate, margin + 135, yPosition);
-        yPosition += lineHeight + 2;
-
-        if (index < usersToShow.length - 1) {
-          pdf.setDrawColor(220, 220, 220);
-          pdf.setLineWidth(0.5);
-          pdf.line(margin, yPosition - 1, pageWidth - margin, yPosition - 1);
-        }
+        pdf.setTextColor(...textDark);
+        pdf.text(user.email || "N/A", margin + 6, yPosition);
+        pdf.setTextColor(...textMedium);
+        pdf.text(roleText, margin + 90, yPosition);
+        pdf.setTextColor(...textLight);
+        pdf.text(joinedDate, margin + 140, yPosition);
+        yPosition += lineHeight + 4;
       });
 
       if (report.users.length > 50) {
         yPosition += 5;
         pdf.setFontSize(8);
-        pdf.setTextColor(...lightGray);
+        pdf.setTextColor(...textLight);
         pdf.text(`(Showing first 50 of ${report.users.length} users)`, margin, yPosition);
-        pdf.setTextColor(...darkGray);
+        pdf.setTextColor(...textDark);
       }
     } else if (reportType === "Listing Performance Report" && report.listings && report.listings.length > 0) {
-      checkPageBreak(40);
+      checkPageBreak(50);
+      
+      // Section title
       pdf.setFontSize(16);
       pdf.setFont("helvetica", "bold");
-      pdf.setTextColor(...darkGray);
+      pdf.setTextColor(...navyBlue);
       pdf.text("Listing Performance", margin, yPosition);
-      yPosition += 10;
+      yPosition += 12;
 
       pdf.setFontSize(9);
       pdf.setFont("helvetica", "normal");
       
-      // Table header with brand color
-      pdf.setFillColor(...primaryBlue);
-      pdf.roundedRect(margin, yPosition - 6, pageWidth - (margin * 2), 10, 2, 2, "F");
+      // Professional table header with navy blue background
+      pdf.setFillColor(...navyBlue);
+      pdf.roundedRect(margin, yPosition - 7, pageWidth - (margin * 2), 12, 3, 3, "F");
       pdf.setFont("helvetica", "bold");
-      pdf.setTextColor(255, 255, 255);
-      pdf.text("Title", margin + 5, yPosition);
-      pdf.text("Status", margin + 70, yPosition);
-      pdf.text("Bookings", margin + 95, yPosition);
-      pdf.text("Revenue", margin + 120, yPosition);
-      pdf.text("Rating", margin + 155, yPosition);
-      yPosition += 12;
+      pdf.setTextColor(...white);
+      pdf.text("Title", margin + 6, yPosition);
+      pdf.text("Status", margin + 75, yPosition);
+      pdf.text("Bookings", margin + 100, yPosition);
+      pdf.text("Revenue", margin + 125, yPosition);
+      pdf.text("Rating", margin + 160, yPosition);
+      yPosition += 14;
       pdf.setFont("helvetica", "normal");
-      pdf.setTextColor(...darkGray);
 
       const formatCurrency = (amount) => {
         return new Intl.NumberFormat('en-US', {
@@ -2455,75 +3030,95 @@ const ReportsContent = () => {
       // Limit to first 50 listings
       const listingsToShow = report.listings.slice(0, 50);
       listingsToShow.forEach((listing, index) => {
-        checkPageBreak(10);
+        checkPageBreak(12);
         
-        // Alternate row background
+        // White background with subtle border for each row
+        pdf.setFillColor(...white);
+        pdf.setDrawColor(...borderGray);
+        pdf.setLineWidth(0.3);
+        pdf.roundedRect(margin, yPosition - 6, pageWidth - (margin * 2), lineHeight + 3, 2, 2, "FD");
+        
+        // Light blue background for alternate rows
         if (index % 2 === 0) {
-          pdf.setFillColor(...bgGray);
-          pdf.rect(margin, yPosition - 5, pageWidth - (margin * 2), lineHeight + 2, "F");
+          pdf.setFillColor(...lightBlue);
+          pdf.roundedRect(margin, yPosition - 6, pageWidth - (margin * 2), lineHeight + 3, 2, 2, "F");
         }
         
         const title = listing.title.length > 25 ? listing.title.substring(0, 22) + "..." : listing.title;
-        pdf.setTextColor(...darkGray);
-        pdf.text(title, margin + 5, yPosition);
-        pdf.text(listing.status || "N/A", margin + 70, yPosition);
-        pdf.text(listing.confirmedBookings?.toString() || "0", margin + 95, yPosition);
-        pdf.setTextColor(...primaryBlue);
+        pdf.setTextColor(...textDark);
+        pdf.text(title, margin + 6, yPosition);
+        pdf.setTextColor(...textMedium);
+        pdf.text(listing.status || "N/A", margin + 75, yPosition);
+        pdf.text(listing.confirmedBookings?.toString() || "0", margin + 100, yPosition);
+        pdf.setTextColor(...royalBlue);
         pdf.setFont("helvetica", "bold");
-        pdf.text(formatCurrency(listing.totalRevenue || 0), margin + 120, yPosition);
+        pdf.text(formatCurrency(listing.totalRevenue || 0), margin + 125, yPosition);
         pdf.setFont("helvetica", "normal");
-        pdf.setTextColor(...darkGray);
-        pdf.text(listing.averageRating ? listing.averageRating.toFixed(1) : "N/A", margin + 155, yPosition);
-        yPosition += lineHeight + 2;
-
-        if (index < listingsToShow.length - 1) {
-          pdf.setDrawColor(220, 220, 220);
-          pdf.setLineWidth(0.5);
-          pdf.line(margin, yPosition - 1, pageWidth - margin, yPosition - 1);
-        }
+        pdf.setTextColor(...textDark);
+        pdf.text(listing.averageRating ? listing.averageRating.toFixed(1) : "N/A", margin + 160, yPosition);
+        yPosition += lineHeight + 4;
       });
 
       if (report.listings.length > 50) {
         yPosition += 5;
         pdf.setFontSize(8);
-        pdf.setTextColor(...lightGray);
+        pdf.setTextColor(...textLight);
         pdf.text(`(Showing first 50 of ${report.listings.length} listings)`, margin, yPosition);
-        pdf.setTextColor(...darkGray);
+        pdf.setTextColor(...textDark);
       }
     }
 
-    // Footer on each page with branding
+    // Professional footer on each page with branding
     const pageCount = pdf.internal.pages.length - 1;
     for (let i = 1; i <= pageCount; i++) {
       pdf.setPage(i);
       
-      // Footer line
-      pdf.setDrawColor(...lightGray);
-      pdf.setLineWidth(0.5);
-      pdf.line(margin, pageHeight - 25, pageWidth - margin, pageHeight - 25);
+      // Subtle blue accent line at footer
+      pdf.setDrawColor(...royalBlue);
+      pdf.setLineWidth(0.8);
+      pdf.line(margin, pageHeight - 30, pageWidth - margin, pageHeight - 30);
       
-      // Footer text
+      // Footer background with light blue tint
+      pdf.setFillColor(...lightBlue);
+      pdf.rect(0, pageHeight - 28, pageWidth, 28, "F");
+      
+      // Footer text with professional styling
       pdf.setFontSize(8);
-      pdf.setTextColor(...lightGray);
       pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...textMedium);
       pdf.text(
-        `Voyago Admin Report`,
+        `Voyago Administrative Report`,
         margin,
-        pageHeight - 15,
+        pageHeight - 18,
         { align: "left" }
       );
+      
+      pdf.setTextColor(...navyBlue);
+      pdf.setFont("helvetica", "bold");
       pdf.text(
         `Page ${i} of ${pageCount}`,
         pageWidth - margin,
-        pageHeight - 15,
+        pageHeight - 18,
         { align: "right" }
       );
       
       // Generated date in footer
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...textLight);
       pdf.text(
         `Generated: ${report.generatedAt}`,
         pageWidth / 2,
-        pageHeight - 15,
+        pageHeight - 18,
+        { align: "center" }
+      );
+      
+      // Confidentiality notice
+      pdf.setFontSize(7);
+      pdf.setTextColor(...textLight);
+      pdf.text(
+        `Confidential - For Internal Use Only`,
+        pageWidth / 2,
+        pageHeight - 10,
         { align: "center" }
       );
     }
@@ -2550,15 +3145,25 @@ const ReportsContent = () => {
       const data = await fetchReportData(reportType, reportStartDate, reportEndDate);
       let report;
 
+      // Format date range for display
+      const dateRange = reportStartDate && reportEndDate
+        ? {
+            start: reportStartDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+            end: reportEndDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+            startDate: reportStartDate,
+            endDate: reportEndDate
+          }
+        : null;
+
       switch (reportType) {
         case "Financial Report":
-          report = generateFinancialReport(data);
+          report = generateFinancialReport(data, dateRange);
           break;
         case "User Report":
-          report = generateUserReport(data);
+          report = generateUserReport(data, dateRange);
           break;
         case "Listing Performance Report":
-          report = generateListingPerformanceReport(data);
+          report = generateListingPerformanceReport(data, dateRange);
           break;
         default:
           throw new Error("Unknown report type");
@@ -2587,40 +3192,25 @@ const ReportsContent = () => {
           <label className="block text-sm font-medium text-[#1C1C1E] mb-4">
             Date Range (Optional)
           </label>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-            <div>
-              <label className="block text-xs text-[#8E8E93] font-light mb-2">Start Date</label>
-              <DatePicker
-                selected={startDate}
-                onChange={(date) => setStartDate(date)}
-                selectsStart
-                startDate={startDate}
-                endDate={endDate}
-                maxDate={endDate || new Date()}
-                placeholderText="Select start date"
-                dateFormat="yyyy-MM-dd"
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-[#0071E3] focus:ring-2 focus:ring-[#0071E3]/10 bg-white text-[#1C1C1E] font-light cursor-pointer"
-                calendarClassName="!rounded-xl !border-gray-200 !shadow-lg"
-                wrapperClassName="w-full"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-[#8E8E93] font-light mb-2">End Date</label>
-              <DatePicker
-                selected={endDate}
-                onChange={(date) => setEndDate(date)}
-                selectsEnd
-                startDate={startDate}
-                endDate={endDate}
-                minDate={startDate}
-                maxDate={new Date()}
-                placeholderText="Select end date"
-                dateFormat="yyyy-MM-dd"
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-[#0071E3] focus:ring-2 focus:ring-[#0071E3]/10 bg-white text-[#1C1C1E] font-light cursor-pointer"
-                calendarClassName="!rounded-xl !border-gray-200 !shadow-lg"
-                wrapperClassName="w-full"
-              />
-            </div>
+          <div className="mb-4">
+            <DatePicker
+              selected={startDate}
+              onChange={(dates) => {
+                const [start, end] = dates || [null, null];
+                setStartDate(start);
+                setEndDate(end);
+              }}
+              startDate={startDate}
+              endDate={endDate}
+              selectsRange
+              maxDate={new Date()}
+              placeholderText="Select date range"
+              dateFormat="yyyy-MM-dd"
+              isClearable
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-[#0071E3] focus:ring-2 focus:ring-[#0071E3]/10 bg-white text-[#1C1C1E] font-light cursor-pointer"
+              calendarClassName="!rounded-xl !border-gray-200 !shadow-lg"
+              wrapperClassName="w-full"
+            />
           </div>
           {(startDate || endDate) && (
             <button
@@ -2628,7 +3218,7 @@ const ReportsContent = () => {
                 setStartDate(null);
                 setEndDate(null);
               }}
-              className="text-sm text-[#0071E3] font-light hover:underline flex items-center gap-2"
+              className="text-sm text-[#0071E3] font-light hover:underline flex items-center gap-2 mb-4"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -2640,7 +3230,7 @@ const ReportsContent = () => {
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            Leave empty for all-time reports. Select both dates to filter by date range.
+            Leave empty for all-time reports. Click to select start date, then click again to select end date.
           </p>
         </div>
 
@@ -2685,59 +3275,70 @@ const ReportsContent = () => {
 
 // Policy Content Component
 const PolicyContent = () => {
-  const { currentUser } = useAuth();
-  const [policies, setPolicies] = useState({
-    cancellationPeriod: 24,
-    maxImages: 10,
-    reviewLimit: 30,
-    paypalFeePercentage: 3.4,
-    paypalFixedFee: 15,
-    refundableHours: 24,
-    minimumRefundAmount: 50,
-    refundProcessingDays: 3,
-    refundsEnabled: true,
-    emailNotifications: true,
-    autoApproveRefunds: true,
-    eWalletPayment: true
-  });
-  const [adminPaypalEmail, setAdminPaypalEmail] = useState("");
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [policySections, setPolicySections] = useState({
+    introduction: "",
+    generalPlatformRules: "",
+    bookingPaymentPolicy: "",
+    cancellationRefundPolicy: "",
+    hostResponsibilities: "",
+    codeOfConduct: "",
+    privacyDataProtection: ""
+  });
+  const [savingSection, setSavingSection] = useState(null);
+  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
     fetchAdminSettings();
-  }, [currentUser]);
+  }, []);
 
   const fetchAdminSettings = async () => {
     try {
       setLoading(true);
       
-      // Try to get from admin settings collection first
-      const settingsQuery = query(collection(db, "adminSettings"), where("type", "==", "paypal"));
-      const settingsSnapshot = await getDocs(settingsQuery);
-      
-      if (!settingsSnapshot.empty) {
-        const settingsDoc = settingsSnapshot.docs[0];
-        const data = settingsDoc.data();
-        setAdminPaypalEmail(data.paypalEmail || "");
+      // Fetch narrative policy content
+      const policyContentDoc = await getDoc(doc(db, "adminSettings", "policyContent"));
+      if (policyContentDoc.exists()) {
+        const data = policyContentDoc.data();
+        // Check if it's the new structure (sections) or old structure (single content)
+        if (data.sections) {
+          setPolicySections(data.sections);
+        } else if (data.content) {
+          // Migrate old format to new format
+          const content = data.content;
+          const sections = {
+            introduction: content.split("## General Platform Rules")[0]?.trim() || "",
+            generalPlatformRules: content.split("## General Platform Rules")[1]?.split("## Booking & Payment Policy")[0]?.trim() || "",
+            bookingPaymentPolicy: content.split("## Booking & Payment Policy")[1]?.split("## Cancellation & Refund Policy")[0]?.trim() || "",
+            cancellationRefundPolicy: content.split("## Cancellation & Refund Policy")[1]?.split("## Host Responsibilities")[0]?.trim() || "",
+            hostResponsibilities: content.split("## Host Responsibilities")[1]?.split("## Code of Conduct")[0]?.trim() || "",
+            codeOfConduct: content.split("## Code of Conduct")[1]?.split("## Privacy & Data Protection")[0]?.trim() || "",
+            privacyDataProtection: content.split("## Privacy & Data Protection")[1]?.trim() || ""
+          };
+          setPolicySections(sections);
       } else {
-        // Fallback: check admin user document
-        if (currentUser) {
-          const adminDoc = await getDoc(doc(db, "users", currentUser.uid));
-          if (adminDoc.exists()) {
-            const adminData = adminDoc.data();
-            setAdminPaypalEmail(adminData.adminPaypalEmail || "");
-          }
+          // Set default content
+          setPolicySections({
+            introduction: "Welcome to Voyago, a peer-to-peer accommodation booking platform connecting guests with verified hosts offering unique stays and experiences. By using Voyago, you agree to comply with these policies, which are designed to ensure a safe, fair, and transparent environment for all users.",
+            generalPlatformRules: "All users must provide accurate and up-to-date information in their profiles and listings. Any attempt to mislead, defraud, or manipulate the platform or its users will result in immediate account suspension. Voyago reserves the right to review, remove, or suspend any listing or booking that violates these policies. All communication and transactions must occur within the Voyago platform for security and tracking purposes.",
+            bookingPaymentPolicy: "Guests must complete full payment through Voyago's secure payment system before a booking is confirmed. The host will receive their payout 24 hours after the check-in date, once the booking is verified as completed. Payments are held temporarily by Voyago to ensure proper transaction processing and compliance.",
+            cancellationRefundPolicy: "Cancellation policies vary by listing and are clearly displayed before booking. Guests may cancel according to the host's cancellation policy. Refunds will be processed according to the policy terms. Hosts who cancel confirmed bookings may face penalties and account restrictions.",
+            hostResponsibilities: "Hosts are responsible for maintaining accurate listing information, providing clean and safe accommodations, responding to guest inquiries promptly, and honoring confirmed bookings. Hosts must comply with all local laws and regulations regarding short-term rentals.",
+            codeOfConduct: "All hosts must maintain professional conduct, treat guests with respect, and provide accurate descriptions of their properties. Discrimination of any kind is strictly prohibited. Hosts must respond to booking requests and messages in a timely manner.",
+            privacyDataProtection: "Voyago is committed to protecting user privacy. All personal information is handled according to our Privacy Policy. Hosts must respect guest privacy and not share guest information with third parties without consent."
+          });
         }
-      }
-      
-      // Fetch policies from settings
-      const policiesQuery = query(collection(db, "adminSettings"), where("type", "==", "policies"));
-      const policiesSnapshot = await getDocs(policiesQuery);
-      if (!policiesSnapshot.empty) {
-        const policiesDoc = policiesSnapshot.docs[0];
-        const policiesData = policiesDoc.data();
-        setPolicies(prev => ({ ...prev, ...policiesData }));
+      } else {
+        // Set default content
+        setPolicySections({
+          introduction: "Welcome to Voyago, a peer-to-peer accommodation booking platform connecting guests with verified hosts offering unique stays and experiences. By using Voyago, you agree to comply with these policies, which are designed to ensure a safe, fair, and transparent environment for all users.",
+          generalPlatformRules: "All users must provide accurate and up-to-date information in their profiles and listings. Any attempt to mislead, defraud, or manipulate the platform or its users will result in immediate account suspension. Voyago reserves the right to review, remove, or suspend any listing or booking that violates these policies. All communication and transactions must occur within the Voyago platform for security and tracking purposes.",
+          bookingPaymentPolicy: "Guests must complete full payment through Voyago's secure payment system before a booking is confirmed. The host will receive their payout 24 hours after the check-in date, once the booking is verified as completed. Payments are held temporarily by Voyago to ensure proper transaction processing and compliance.",
+          cancellationRefundPolicy: "Cancellation policies vary by listing and are clearly displayed before booking. Guests may cancel according to the host's cancellation policy. Refunds will be processed according to the policy terms. Hosts who cancel confirmed bookings may face penalties and account restrictions.",
+          hostResponsibilities: "Hosts are responsible for maintaining accurate listing information, providing clean and safe accommodations, responding to guest inquiries promptly, and honoring confirmed bookings. Hosts must comply with all local laws and regulations regarding short-term rentals.",
+          codeOfConduct: "All hosts must maintain professional conduct, treat guests with respect, and provide accurate descriptions of their properties. Discrimination of any kind is strictly prohibited. Hosts must respond to booking requests and messages in a timely manner.",
+          privacyDataProtection: "Voyago is committed to protecting user privacy. All personal information is handled according to our Privacy Policy. Hosts must respect guest privacy and not share guest information with third parties without consent."
+        });
       }
     } catch (error) {
       console.error("Error fetching admin settings:", error);
@@ -2746,80 +3347,334 @@ const PolicyContent = () => {
     }
   };
 
-  const handleUpdateAdminPaypal = async () => {
-    if (!adminPaypalEmail || !adminPaypalEmail.includes("@")) {
-      alert("Please enter a valid PayPal email address.");
-      return;
-    }
-
+  const handleSaveSection = async (sectionKey) => {
     try {
-      setSaving(true);
-      
-      // Save to admin settings collection
-      const settingsQuery = query(collection(db, "adminSettings"), where("type", "==", "paypal"));
-      const settingsSnapshot = await getDocs(settingsQuery);
-      
-      if (!settingsSnapshot.empty) {
-        // Update existing
-        const settingsDoc = settingsSnapshot.docs[0];
-        await updateDoc(doc(db, "adminSettings", settingsDoc.id), {
-          paypalEmail: adminPaypalEmail,
+      setSavingSection(sectionKey);
+      await setDoc(doc(db, "adminSettings", "policyContent"), {
+        sections: policySections,
+        type: "policyContent",
           updatedAt: serverTimestamp()
-        });
-      } else {
-        // Create new
-        await addDoc(collection(db, "adminSettings"), {
-          type: "paypal",
-          paypalEmail: adminPaypalEmail,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        });
-      }
-      
-      // Also save to admin user document for quick access
-      if (currentUser) {
-        await updateDoc(doc(db, "users", currentUser.uid), {
-          adminPaypalEmail: adminPaypalEmail
-        });
-      }
-      
-      alert("Admin PayPal email updated successfully!");
+      }, { merge: true });
+      alert(`${getSectionTitle(sectionKey)} saved successfully!`);
     } catch (error) {
-      console.error("Error updating admin PayPal:", error);
-      alert("Failed to update admin PayPal email. Please try again.");
+      console.error("Error saving policy section:", error);
+      alert("Failed to save policy section. Please try again.");
     } finally {
-      setSaving(false);
+      setSavingSection(null);
     }
   };
 
-  const handleUpdatePolicy = async (key, value) => {
+  const getSectionTitle = (key) => {
+    const titles = {
+      introduction: "Introduction",
+      generalPlatformRules: "General Platform Rules",
+      bookingPaymentPolicy: "Booking & Payment Policy",
+      cancellationRefundPolicy: "Cancellation & Refund Policy",
+      hostResponsibilities: "Host Responsibilities",
+      codeOfConduct: "Code of Conduct",
+      privacyDataProtection: "Privacy & Data Protection"
+    };
+    return titles[key] || key;
+  };
+
+  const policySectionsList = [
+    { key: "introduction", title: "Introduction", icon: "📝", color: "blue" },
+    { key: "generalPlatformRules", title: "General Platform Rules", icon: "🛡️", color: "blue" },
+    { key: "bookingPaymentPolicy", title: "Booking & Payment Policy", icon: "💳", color: "green" },
+    { key: "cancellationRefundPolicy", title: "Cancellation & Refund Policy", icon: "↩️", color: "orange" },
+    { key: "hostResponsibilities", title: "Host Responsibilities", icon: "🏠", color: "purple" },
+    { key: "codeOfConduct", title: "Code of Conduct", icon: "✅", color: "indigo" },
+    { key: "privacyDataProtection", title: "Privacy & Data Protection", icon: "🔒", color: "gray" }
+  ];
+
+  const handleGeneratePolicyReport = () => {
     try {
-      setPolicies(prev => ({ ...prev, [key]: value }));
+      setGenerating(true);
       
-      // Save to Firestore
-      const policiesQuery = query(collection(db, "adminSettings"), where("type", "==", "policies"));
-      const policiesSnapshot = await getDocs(policiesQuery);
+      const pdf = new jsPDF();
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      let yPosition = 0;
+      const margin = 20;
+      const lineHeight = 8;
+      const sectionSpacing = 15;
       
-      if (!policiesSnapshot.empty) {
-        const policiesDoc = policiesSnapshot.docs[0];
-        await updateDoc(doc(db, "adminSettings", policiesDoc.id), {
-          [key]: value,
-          updatedAt: serverTimestamp()
+      // Professional white and blue color scheme (same as financial report)
+      const navyBlue = [0, 51, 102]; // #003366 - Deep professional blue
+      const royalBlue = [25, 118, 210]; // #1976D2 - Primary blue
+      const lightBlue = [227, 242, 253]; // #E3F2FD - Light blue background
+      const textDark = [33, 33, 33]; // #212121 - Dark text
+      const textMedium = [97, 97, 97]; // #616161 - Medium gray text
+      const textLight = [158, 158, 158]; // #9E9E9E - Light gray text
+      const white = [255, 255, 255]; // Pure white
+      const borderGray = [224, 224, 224]; // #E0E0E0 - Subtle borders
+
+      // Helper function to add header on each page
+      const addHeader = () => {
+        // Clean white background with blue accent bar
+        pdf.setFillColor(...white);
+        pdf.rect(0, 0, pageWidth, 60, "F");
+        
+        // Blue accent bar at top
+        pdf.setFillColor(...navyBlue);
+        pdf.rect(0, 0, pageWidth, 8, "F");
+        
+        // Voyago brand text in navy blue
+        pdf.setTextColor(...navyBlue);
+        pdf.setFontSize(28);
+        pdf.setFont("helvetica", "bold");
+        pdf.text("Voyago", margin, 25);
+        
+        // Elegant subtitle
+        pdf.setFontSize(11);
+        pdf.setFont("helvetica", "normal");
+        pdf.setTextColor(...textMedium);
+        pdf.text("Administrative Report", margin, 35);
+        
+        // Professional blue underline
+        pdf.setDrawColor(...royalBlue);
+        pdf.setLineWidth(1.5);
+        pdf.line(margin, 40, margin + 80, 40);
+        
+        // Date and report type in top right
+        pdf.setFontSize(9);
+        pdf.setTextColor(...textLight);
+        pdf.text("Policy & Compliance Report", pageWidth - margin, 25, { align: "right" });
+        pdf.text(`Generated: ${new Date().toLocaleString('en-US', { 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric', 
+          hour: '2-digit', 
+          minute: '2-digit' 
+        })}`, pageWidth - margin, 35, { align: "right" });
+        
+        // Subtle separator line
+        pdf.setDrawColor(...borderGray);
+        pdf.setLineWidth(0.5);
+        pdf.line(margin, 55, pageWidth - margin, 55);
+        
+        // Reset text color
+        pdf.setTextColor(...textDark);
+        yPosition = 70;
+      };
+
+      // Helper function to add a new page if needed
+      const checkPageBreak = (requiredSpace = 20) => {
+        if (yPosition + requiredSpace > pageHeight - margin) {
+          pdf.addPage();
+          addHeader();
+          return true;
+        }
+        return false;
+      };
+
+      // Helper function to split text into lines that fit the page width
+      const splitTextIntoLines = (text, maxWidth) => {
+        const words = text.split(' ');
+        const lines = [];
+        let currentLine = '';
+
+        words.forEach(word => {
+          const testLine = currentLine + (currentLine ? ' ' : '') + word;
+          const testWidth = pdf.getTextWidth(testLine);
+          
+          if (testWidth > maxWidth && currentLine) {
+            lines.push(currentLine);
+            currentLine = word;
+          } else {
+            currentLine = testLine;
+          }
         });
-      } else {
-        await addDoc(collection(db, "adminSettings"), {
-          type: "policies",
-          ...policies,
-          [key]: value,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
+        
+        if (currentLine) {
+          lines.push(currentLine);
+        }
+        
+        return lines;
+      };
+
+      // Add header to first page
+      addHeader();
+
+      // Report Title with professional styling
+      pdf.setFontSize(20);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...navyBlue);
+      pdf.text("Policy & Compliance Report", margin, yPosition);
+      yPosition += sectionSpacing + 5;
+
+      // Executive Summary Section (same style as financial report)
+      checkPageBreak(80);
+      const summaryStartY = yPosition;
+      const summaryBoxHeight = 50;
+      
+      // Draw summary box
+      pdf.setFillColor(...white);
+      pdf.setDrawColor(...borderGray);
+      pdf.setLineWidth(0.5);
+      pdf.roundedRect(margin, yPosition - 8, pageWidth - (margin * 2), summaryBoxHeight, 4, 4, "FD");
+      
+      // Blue accent bar on left side
+      pdf.setFillColor(...royalBlue);
+      pdf.rect(margin, yPosition - 8, 4, summaryBoxHeight, "F");
+      
+      // Section title with blue accent
+      pdf.setFontSize(15);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...navyBlue);
+      pdf.text("Executive Summary", margin + 12, yPosition + 3);
+      
+      // Subtle underline
+      pdf.setDrawColor(...royalBlue);
+      pdf.setLineWidth(0.8);
+      pdf.line(margin + 12, yPosition + 5, margin + 100, yPosition + 5);
+      
+      yPosition += 12;
+
+      pdf.setFontSize(10);
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...textDark);
+      
+      // Count sections
+      const totalSections = Object.keys(policySections).length;
+      const filledSections = Object.values(policySections).filter(s => s && s.trim()).length;
+      
+      pdf.text(`Total Policy Sections: ${totalSections}`, margin + 12, yPosition);
+      yPosition += lineHeight + 2;
+      pdf.text(`Active Sections: ${filledSections}`, margin + 12, yPosition);
+      yPosition += lineHeight + 2;
+      
+      const lastUpdated = new Date().toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+      pdf.text(`Report Date: ${lastUpdated}`, margin + 12, yPosition);
+      
+      yPosition += summaryBoxHeight - 25;
+      pdf.setFontSize(10);
+
+      // Policy Sections Content
+      yPosition += sectionSpacing;
+      checkPageBreak(50);
+
+      pdf.setFontSize(16);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...navyBlue);
+      pdf.text("Policy Sections", margin, yPosition);
+      yPosition += sectionSpacing;
+
+      // Iterate through policy sections
+      policySectionsList.forEach((section) => {
+        checkPageBreak(60);
+        
+        const sectionContent = policySections[section.key] || "";
+        if (!sectionContent.trim()) return; // Skip empty sections
+        
+        // Section header with blue accent box
+        pdf.setFillColor(...lightBlue);
+        pdf.setDrawColor(...borderGray);
+        pdf.setLineWidth(0.5);
+        pdf.roundedRect(margin, yPosition - 6, pageWidth - (margin * 2), 12, 3, 3, "FD");
+        
+        // Blue accent bar on left
+        pdf.setFillColor(...royalBlue);
+        pdf.rect(margin, yPosition - 6, 4, 12, "F");
+        
+        pdf.setFontSize(13);
+        pdf.setFont("helvetica", "bold");
+        pdf.setTextColor(...navyBlue);
+        pdf.text(section.title, margin + 10, yPosition + 2);
+        yPosition += 15;
+
+        // Section content
+        pdf.setFontSize(10);
+        pdf.setFont("helvetica", "normal");
+        pdf.setTextColor(...textDark);
+        
+        const contentWidth = pageWidth - (margin * 2) - 10;
+        const contentLines = splitTextIntoLines(sectionContent, contentWidth);
+        
+        contentLines.forEach(line => {
+          checkPageBreak(10);
+          pdf.text(line, margin + 10, yPosition);
+          yPosition += lineHeight + 1;
         });
+        
+        yPosition += sectionSpacing;
+      });
+
+      // Professional footer on each page with branding
+      const pageCount = pdf.internal.pages.length - 1;
+      for (let i = 1; i <= pageCount; i++) {
+        pdf.setPage(i);
+        
+        // Subtle blue accent line at footer
+        pdf.setDrawColor(...royalBlue);
+        pdf.setLineWidth(0.8);
+        pdf.line(margin, pageHeight - 30, pageWidth - margin, pageHeight - 30);
+        
+        // Footer background with light blue tint
+        pdf.setFillColor(...lightBlue);
+        pdf.rect(0, pageHeight - 28, pageWidth, 28, "F");
+        
+        // Footer text with professional styling
+        pdf.setFontSize(8);
+        pdf.setFont("helvetica", "normal");
+        pdf.setTextColor(...textMedium);
+        pdf.text(
+          `Voyago Administrative Report`,
+          margin,
+          pageHeight - 18,
+          { align: "left" }
+        );
+        
+        pdf.setTextColor(...navyBlue);
+        pdf.setFont("helvetica", "bold");
+        pdf.text(
+          `Page ${i} of ${pageCount}`,
+          pageWidth - margin,
+          pageHeight - 18,
+          { align: "right" }
+        );
+        
+        // Generated date in footer
+        pdf.setFont("helvetica", "normal");
+        pdf.setTextColor(...textLight);
+        pdf.text(
+          `Generated: ${new Date().toLocaleString('en-US', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric', 
+            hour: '2-digit', 
+            minute: '2-digit' 
+          })}`,
+          pageWidth / 2,
+          pageHeight - 18,
+          { align: "center" }
+        );
+        
+        // Confidentiality notice
+        pdf.setFontSize(7);
+        pdf.setTextColor(...textLight);
+        pdf.text(
+          `Confidential - For Internal Use Only`,
+          pageWidth / 2,
+          pageHeight - 10,
+          { align: "center" }
+        );
       }
+
+      // Save the PDF
+      const fileName = `Policy_Compliance_Report_${new Date().toISOString().split("T")[0]}.pdf`;
+      pdf.save(fileName);
       
-      alert("Policy updated successfully!");
+      alert("Policy & Compliance Report generated and downloaded successfully!");
     } catch (error) {
-      console.error("Error updating policy:", error);
-      alert("Failed to update policy.");
+      console.error("Error generating policy report:", error);
+      alert("Failed to generate Policy & Compliance Report. Please try again.");
+    } finally {
+      setGenerating(false);
     }
   };
 
@@ -2833,327 +3688,99 @@ const PolicyContent = () => {
     );
   }
 
+  const getColorClasses = (color) => {
+    const colors = {
+      blue: "bg-blue-100 text-blue-600 border-blue-200",
+      green: "bg-green-100 text-green-600 border-green-200",
+      orange: "bg-orange-100 text-orange-600 border-orange-200",
+      purple: "bg-purple-100 text-purple-600 border-purple-200",
+      indigo: "bg-indigo-100 text-indigo-600 border-indigo-200",
+      gray: "bg-gray-100 text-gray-600 border-gray-200"
+    };
+    return colors[color] || colors.blue;
+  };
+
   return (
     <div className="space-y-6 animate-fadeInUp">
-      {/* Admin PayPal Account Configuration */}
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 rounded-lg bg-[#0071E3] flex items-center justify-center">
-            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-            </svg>
-          </div>
-          <div>
-            <h2 className="text-xl font-medium text-[#1C1C1E] mb-1">Admin PayPal Account</h2>
-            <p className="text-sm text-[#8E8E93] font-light">Configure the PayPal account that receives booking payments</p>
-          </div>
-        </div>
-        
-        <div className="bg-gradient-to-r from-[#0071E3]/5 to-[#0051D0]/5 rounded-xl p-6 border border-[#0071E3]/10">
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-[#1C1C1E] mb-2">
-                PayPal Email Address
-              </label>
-              <div className="flex gap-3">
-                <input
-                  type="email"
-                  value={adminPaypalEmail}
-                  onChange={(e) => setAdminPaypalEmail(e.target.value)}
-                  placeholder="admin@voyago.com"
-                  className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-[#0071E3] focus:ring-4 focus:ring-[#0071E3]/10 bg-white text-[#1C1C1E] font-light transition-all"
-                  disabled={saving}
-                />
-                <button
-                  onClick={handleUpdateAdminPaypal}
-                  disabled={saving || !adminPaypalEmail || !adminPaypalEmail.includes("@")}
-                  className="px-6 py-3 bg-[#0071E3] text-white rounded-xl font-medium hover:bg-[#0051D0] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-[#0071E3]/20 hover:shadow-xl hover:shadow-[#0071E3]/30"
-                >
-                  {saving ? (
-                    <span className="flex items-center gap-2">
-                      <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Saving...
-                    </span>
-                  ) : (
-                    "Save"
-                  )}
-                </button>
-              </div>
-              <div className="mt-2 space-y-2">
-                <p className="text-xs text-[#8E8E93] font-light">
-                  Enter the PayPal email address for the admin account that should receive all booking payments.
-                </p>
-              </div>
-              {adminPaypalEmail && (
-                <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <p className="text-sm text-green-700 font-light">
-                      Admin PayPal (Business Account 1 - receives all payments): <span className="font-medium">{adminPaypalEmail}</span>
-                    </p>
-                  </div>
-                </div>
-              )}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-[#0071E3] flex items-center justify-center">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
             </div>
-            
+            <div>
+              <h2 className="text-xl font-medium text-[#1C1C1E] mb-1">Policy & Compliance Guidelines</h2>
+              <p className="text-sm text-[#8E8E93] font-light">Edit individual policy sections that appear on the guest side</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+          <a
+            href="/policy"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-4 py-2 bg-white border-2 border-[#0071E3] text-[#0071E3] rounded-xl text-sm font-medium hover:bg-[#0071E3]/5 transition-all"
+          >
+            Preview on Guest Side
+          </a>
+          <button
+            onClick={handleGeneratePolicyReport}
+            disabled={generating}
+            className="bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl px-4 py-2 flex items-center gap-2 hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            <span>{generating ? "Generating..." : "Generate Report"}</span>
+          </button>
           </div>
         </div>
       </div>
-
-      {/* Policy Configuration */}
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-2xl font-light text-[#1C1C1E] mb-1">Policy Configuration</h2>
-            <p className="text-sm text-[#8E8E93] font-light">Manage platform policies and compliance settings</p>
-          </div>
-          <div className="flex gap-4">
-            <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-light">
-              Refunds Enabled
-            </span>
-            <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-light">
-              Auto-approve Enabled
-            </span>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Platform Rules */}
-          <div className="bg-gray-50 rounded-xl p-6">
+            
+      {/* Policy Sections */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {policySectionsList.map((section) => (
+          <div key={section.key} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                </svg>
+              <div className={`w-10 h-10 rounded-lg ${getColorClasses(section.color)} flex items-center justify-center text-xl border`}>
+                {section.icon}
               </div>
-              <div>
-                <h3 className="text-lg font-medium text-[#1C1C1E]">Platform Rules</h3>
-                <p className="text-xs text-[#8E8E93] font-light">Basic platform regulations and limits</p>
-              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-medium text-[#1C1C1E]">{section.title}</h3>
             </div>
+          </div>
+
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-[#1C1C1E] mb-2">
-                  Cancellation Period (hours)
-                </label>
-                <input
-                  type="number"
-                  value={policies.cancellationPeriod}
-                  onChange={(e) => handleUpdatePolicy("cancellationPeriod", parseInt(e.target.value))}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0071E3]"
+                <textarea
+                  value={policySections[section.key] || ""}
+                  onChange={(e) => setPolicySections(prev => ({ ...prev, [section.key]: e.target.value }))}
+                  placeholder={`Enter ${section.title.toLowerCase()} content...`}
+                  rows={8}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-[#0071E3] focus:ring-4 focus:ring-[#0071E3]/10 bg-white text-[#1C1C1E] font-light transition-all resize-y text-sm"
                 />
-                <p className="text-xs text-[#8E8E93] font-light mt-1">Hours before check-in for free cancellation</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#1C1C1E] mb-2">Max Images</label>
-                <input
-                  type="number"
-                  value={policies.maxImages}
-                  onChange={(e) => handleUpdatePolicy("maxImages", parseInt(e.target.value))}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0071E3]"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#1C1C1E] mb-2">Review Limit (days)</label>
-                <input
-                  type="number"
-                  value={policies.reviewLimit}
-                  onChange={(e) => handleUpdatePolicy("reviewLimit", parseInt(e.target.value))}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0071E3]"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* PayPal Fees */}
-          <div className="bg-gray-50 rounded-xl p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <div>
-                <h3 className="text-lg font-medium text-[#1C1C1E]">PayPal Fees</h3>
-                <p className="text-xs text-[#8E8E93] font-light">Transaction fee configuration</p>
-              </div>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-[#1C1C1E] mb-2">
-                  PayPal Fee Percentage (%)
-                </label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={policies.paypalFeePercentage}
-                  onChange={(e) => handleUpdatePolicy("paypalFeePercentage", parseFloat(e.target.value))}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0071E3]"
-                />
-                <p className="text-xs text-[#8E8E93] font-light mt-1">PayPal transaction fee percentage (0-10%)</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#1C1C1E] mb-2">PayPal Fixed Fee (PHP)</label>
-                <input
-                  type="number"
-                  value={policies.paypalFixedFee}
-                  onChange={(e) => handleUpdatePolicy("paypalFixedFee", parseInt(e.target.value))}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0071E3]"
-                />
-                <p className="text-xs text-[#8E8E93] font-light mt-1">Fixed PayPal fee per transaction</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Refund Eligibility */}
-          <div className="bg-gray-50 rounded-xl p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
-                <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <div>
-                <h3 className="text-lg font-medium text-[#1C1C1E]">Refund Eligibility</h3>
-                <p className="text-xs text-[#8E8E93] font-light">Configure refund windows and amounts</p>
-              </div>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-[#1C1C1E] mb-2">
-                  Refundable Hours After Confirmation
-                </label>
-                <input
-                  type="number"
-                  value={policies.refundableHours}
-                  onChange={(e) => handleUpdatePolicy("refundableHours", parseInt(e.target.value))}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0071E3]"
-                />
-                <p className="text-xs text-[#8E8E93] font-light mt-1">Hours after host confirmation for full refund (0-168)</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#1C1C1E] mb-2">Minimum Refund Amount (PHP)</label>
-                <input
-                  type="number"
-                  value={policies.minimumRefundAmount}
-                  onChange={(e) => handleUpdatePolicy("minimumRefundAmount", parseInt(e.target.value))}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0071E3]"
-                />
-                <p className="text-xs text-[#8E8E93] font-light mt-1">Minimum amount for refund processing</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Processing Settings */}
-          <div className="bg-gray-50 rounded-xl p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center">
-                <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <div>
-                <h3 className="text-lg font-medium text-[#1C1C1E]">Processing Settings</h3>
-                <p className="text-xs text-[#8E8E93] font-light">Refund processing and automation</p>
-              </div>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-[#1C1C1E] mb-2">Refund Processing Days</label>
-                <input
-                  type="number"
-                  value={policies.refundProcessingDays}
-                  onChange={(e) => handleUpdatePolicy("refundProcessingDays", parseInt(e.target.value))}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0071E3]"
-                />
-                <p className="text-xs text-[#8E8E93] font-light mt-1">Days to process refunds (1-30)</p>
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-[#1C1C1E]">Enable Refunds</p>
-                  <p className="text-xs text-[#8E8E93] font-light">Allow users to request refunds for bookings</p>
                 </div>
                 <button
-                  onClick={() => handleUpdatePolicy("refundsEnabled", !policies.refundsEnabled)}
-                  className={`w-12 h-6 rounded-full transition-all ${
-                    policies.refundsEnabled ? "bg-[#0071E3]" : "bg-gray-300"
-                  }`}
-                >
-                  <div className={`w-5 h-5 bg-white rounded-full transition-transform ${
-                    policies.refundsEnabled ? "translate-x-6" : "translate-x-1"
-                  }`} />
-                </button>
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-[#1C1C1E]">Email Notifications</p>
-                  <p className="text-xs text-[#8E8E93] font-light">Send email notifications for refund requests</p>
-                </div>
-                <button
-                  onClick={() => handleUpdatePolicy("emailNotifications", !policies.emailNotifications)}
-                  className={`w-12 h-6 rounded-full transition-all ${
-                    policies.emailNotifications ? "bg-[#0071E3]" : "bg-gray-300"
-                  }`}
-                >
-                  <div className={`w-5 h-5 bg-white rounded-full transition-transform ${
-                    policies.emailNotifications ? "translate-x-6" : "translate-x-1"
-                  }`} />
-                </button>
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-[#1C1C1E]">Auto-approve Eligible Refunds</p>
-                  <p className="text-xs text-[#8E8E93] font-light">Automatically approve refunds that meet eligibility criteria</p>
-                </div>
-                <button
-                  onClick={() => handleUpdatePolicy("autoApproveRefunds", !policies.autoApproveRefunds)}
-                  className={`w-12 h-6 rounded-full transition-all ${
-                    policies.autoApproveRefunds ? "bg-[#0071E3]" : "bg-gray-300"
-                  }`}
-                >
-                  <div className={`w-5 h-5 bg-white rounded-full transition-transform ${
-                    policies.autoApproveRefunds ? "translate-x-6" : "translate-x-1"
-                  }`} />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Payment Methods */}
-          <div className="bg-gray-50 rounded-xl p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
-                <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                </svg>
-              </div>
-              <div>
-                <h3 className="text-lg font-medium text-[#1C1C1E]">Payment Methods</h3>
-                <p className="text-xs text-[#8E8E93] font-light">Enable or disable payment methods for guest bookings</p>
-              </div>
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-[#1C1C1E]">E-Wallet Payment</p>
-              </div>
-              <button
-                onClick={() => handleUpdatePolicy("eWalletPayment", !policies.eWalletPayment)}
-                className={`w-12 h-6 rounded-full transition-all ${
-                  policies.eWalletPayment ? "bg-[#0071E3]" : "bg-gray-300"
-                }`}
+                onClick={() => handleSaveSection(section.key)}
+                disabled={savingSection === section.key}
+                className="w-full px-4 py-2 bg-[#0071E3] text-white rounded-xl text-sm font-medium hover:bg-[#0051D0] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-[#0071E3]/20 hover:shadow-xl hover:shadow-[#0071E3]/30"
               >
-                <div className={`w-5 h-5 bg-white rounded-full transition-transform ${
-                  policies.eWalletPayment ? "translate-x-6" : "translate-x-1"
-                }`} />
+                {savingSection === section.key ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                    Saving...
+                  </span>
+                ) : (
+                  `Save ${section.title}`
+                )}
               </button>
             </div>
           </div>
-        </div>
+        ))}
       </div>
     </div>
   );
@@ -3164,6 +3791,24 @@ const CashoutApprovalsContent = () => {
   const [withdrawals, setWithdrawals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedFilter, setSelectedFilter] = useState("pending");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState("date"); // date, amount
+  const [sortOrder, setSortOrder] = useState("desc"); // asc, desc
+  
+  // Modal states
+  const [confirmModal, setConfirmModal] = useState({ show: false });
+  const [notesModal, setNotesModal] = useState({ show: false });
+  const [feePreviewModal, setFeePreviewModal] = useState({ show: false });
+  const [processingId, setProcessingId] = useState(null);
+  const [pendingAction, setPendingAction] = useState(null);
+  
+  // Toast notification
+  const [toast, setToast] = useState(null);
+
+  const showToast = (message, type = "info") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 5000);
+  };
 
   useEffect(() => {
     fetchWithdrawals();
@@ -3178,6 +3823,7 @@ const CashoutApprovalsContent = () => {
       (error) => {
         console.error("Error fetching withdrawals:", error);
         setLoading(false);
+        showToast("Error loading cash-out requests", "error");
       }
     );
 
@@ -3193,45 +3839,118 @@ const CashoutApprovalsContent = () => {
       setWithdrawals(data);
     } catch (error) {
       console.error("Error fetching withdrawals:", error);
+      showToast("Error loading cash-out requests", "error");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleUpdateStatus = async (withdrawalId, newStatus, notes = null) => {
+  // Calculate fees for a withdrawal
+  const calculateFees = async (withdrawal) => {
+    let commissionPercentage = 0;
+    let withdrawalFee = 0;
+    
+    try {
+      const serviceFeesQuery = query(
+        collection(db, "adminSettings"),
+        where("type", "==", "serviceFees")
+      );
+      const serviceFeesSnapshot = await getDocs(serviceFeesQuery);
+      if (!serviceFeesSnapshot.empty) {
+        const feesData = serviceFeesSnapshot.docs[0].data();
+        commissionPercentage = feesData.commissionPercentage || 0;
+        withdrawalFee = feesData.withdrawalFee || 0;
+      }
+    } catch (feeError) {
+      console.error("Error fetching service fees:", feeError);
+    }
+
+    const requestedAmount = parseFloat(withdrawal.amount) || 0;
+    const commission = (requestedAmount * commissionPercentage) / 100;
+    const totalFees = commission + withdrawalFee;
+    const payoutAmount = Math.max(0, requestedAmount - totalFees);
+
+    return {
+      requestedAmount,
+      commissionPercentage,
+      commissionAmount: commission,
+      withdrawalFee,
+      totalFees,
+      payoutAmount
+    };
+  };
+
+  // Validate PayPal email
+  const isValidPayPalEmail = (email) => {
+    if (!email || !email.includes("@")) return false;
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD'
+    }).format(amount);
+  };
+
+  const getStatusBadge = (status) => {
+    const badges = {
+      pending: "bg-yellow-100 text-yellow-700",
+      completed: "bg-green-100 text-green-700",
+      rejected: "bg-red-100 text-red-700"
+    };
+    return badges[status] || "bg-gray-100 text-gray-700";
+  };
+
+  const handleUpdateStatus = async (withdrawalId, newStatus, notes = null, processPayout = false) => {
+    setProcessingId(withdrawalId);
+    
     try {
       const withdrawalRef = doc(db, "withdrawalRequests", withdrawalId);
       const withdrawalDoc = await getDoc(withdrawalRef);
       
       if (!withdrawalDoc.exists()) {
-        alert("Withdrawal request not found.");
+        showToast("Withdrawal request not found.", "error");
+        setProcessingId(null);
         return;
       }
 
       const withdrawal = withdrawalDoc.data();
+      
+      // Validate PayPal email if processing payout
+      if (processPayout && !isValidPayPalEmail(withdrawal.paypalEmail)) {
+        showToast("Invalid PayPal email address. Cannot process payout.", "error");
+        setProcessingId(null);
+        return;
+      }
+
       const updateData = {
         status: newStatus,
         processedAt: serverTimestamp(),
         adminNotes: notes || null
       };
 
-      // IMPORTANT: When withdrawal is completed, automatically transfer money via PayPal Payouts API
-      if (newStatus === "completed") {
+      // IMPORTANT: Process PayPal payout when approved (processPayout flag is true)
+      // Note: "completed" status is now set automatically when processing payout on approval
+      if (processPayout) {
         try {
+          const feeBreakdown = await calculateFees(withdrawal);
+
+          // Update withdrawal record with fee breakdown
+          await updateDoc(withdrawalRef, {
+            ...updateData,
+            ...feeBreakdown
+          });
+
           // Call Cloud Function to process PayPal payout
-          console.log("Calling PayPal payout API (Cash-out Approvals)...");
-          console.log("Withdrawal ID:", withdrawalId);
-          console.log("Recipient Email:", withdrawal.paypalEmail);
-          console.log("Amount:", withdrawal.amount.toFixed(2));
-          
           const payoutResult = await processPayPalPayout({
             withdrawalId: withdrawalId,
             recipientEmail: withdrawal.paypalEmail,
-            amount: withdrawal.amount.toFixed(2),
+            amount: feeBreakdown.payoutAmount.toFixed(2),
             currency: "USD"
           }, auth);
-
-          console.log("PayPal Payout Result:", payoutResult);
 
           // Check if payout was successful
           if (!payoutResult || !payoutResult.success) {
@@ -3246,8 +3965,7 @@ const CashoutApprovalsContent = () => {
             payoutCompletedAt: serverTimestamp()
           });
 
-          // Cloud Function handles updating Firestore with payout status
-          // Just update admin payments here
+          // Update admin payments
           try {
             const adminPaymentsQuery = query(
               collection(db, "adminPayments"),
@@ -3266,19 +3984,26 @@ const CashoutApprovalsContent = () => {
           } catch (error) {
             console.error("Error updating admin payment records:", error);
           }
+
+          // If processing payout on approval, also update status to completed
+          if (processPayout) {
+            updateData.status = "completed";
+          }
+
+          showToast(
+            `Cash-out processed successfully! $${feeBreakdown.payoutAmount.toFixed(2)} sent to ${withdrawal.paypalEmail}`,
+            "success"
+          );
         } catch (payoutError) {
           console.error("PayPal Payout Error:", payoutError);
-          console.error("PayPal Payout Error Details:", JSON.stringify(payoutError, null, 2));
           
-          // If payout fails, still update status but mark as failed
-          await updateDoc(withdrawalRef, {
-            ...updateData,
-            payoutError: payoutError.message || payoutError.error || "Unknown error",
-            payoutStatus: "FAILED"
-          });
-          
-          alert(`PayPal payout failed: ${payoutError.message || payoutError.error || "Unknown error"}. Please check Vercel logs and PayPal credentials.`);
-          throw payoutError;
+          // Don't update status if payout fails - keep it as pending
+          showToast(
+            `PayPal payout failed: ${payoutError.message || payoutError.error || "Unknown error"}. Please check PayPal credentials and try again.`,
+            "error"
+          );
+          setProcessingId(null);
+          return; // Exit early, don't update status
         }
       } else if (newStatus === "rejected") {
         const hostRef = doc(db, "users", withdrawal.hostId);
@@ -3303,39 +4028,428 @@ const CashoutApprovalsContent = () => {
             transactions: [transaction, ...transactions].slice(0, 10)
           });
         }
+        
+        showToast("Withdrawal request rejected. Funds returned to host wallet.", "success");
+      } else if (newStatus === "completed") {
+        showToast(`Cash-out request completed successfully!`, "success");
+      } else {
+        showToast(`Cash-out request ${newStatus} successfully!`, "success");
       }
 
       await updateDoc(withdrawalRef, updateData);
-      
-      if (newStatus === "completed") {
-        alert(`Cash-out request processed successfully! $${withdrawal.amount.toFixed(2)} has been automatically transferred from Business Account 1 to the host's Business Account 2 (${withdrawal.paypalEmail}).`);
-      } else {
-      alert(`Cash-out request ${newStatus} successfully!`);
-      }
     } catch (error) {
       console.error("Error updating withdrawal status:", error);
-      alert("Failed to update withdrawal status. Please try again.");
+      showToast("Failed to update withdrawal status. Please try again.", "error");
+    } finally {
+      setProcessingId(null);
     }
   };
 
-  const filteredWithdrawals = withdrawals.filter(w => w.status === selectedFilter);
-
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(amount);
+  // Handle approve action - now automatically processes payout
+  const handleApprove = async (withdrawal) => {
+    try {
+      // Calculate fees first to show in confirmation
+      const feeBreakdown = await calculateFees(withdrawal);
+      
+      setFeePreviewModal({
+        show: true,
+        withdrawal,
+        feeBreakdown,
+        onConfirm: async () => {
+          setFeePreviewModal({ show: false });
+          // Show notes modal for approval notes (optional)
+          setNotesModal({
+            show: true,
+            title: "Approve & Process Cash-out",
+            placeholder: "Enter approval notes (optional)...",
+            onConfirm: async (notes) => {
+              setNotesModal({ show: false });
+              // Process payout immediately - status will be set to "completed" automatically
+              await handleUpdateStatus(withdrawal.id, "pending", notes || null, true); // true = process payout, status becomes "completed"
+            },
+            onCancel: () => setNotesModal({ show: false })
+          });
+        },
+        onCancel: () => setFeePreviewModal({ show: false })
+      });
+    } catch (error) {
+      console.error("Error calculating fees:", error);
+      showToast("Error calculating fees. Please try again.", "error");
+    }
   };
 
-  const getStatusBadge = (status) => {
-    const badges = {
-      pending: "bg-yellow-100 text-yellow-700",
-      approved: "bg-blue-100 text-blue-700",
-      completed: "bg-green-100 text-green-700",
-      rejected: "bg-red-100 text-red-700"
-    };
-    return badges[status] || "bg-gray-100 text-gray-700";
+  // Handle reject action
+  const handleReject = (withdrawal) => {
+    setNotesModal({
+      show: true,
+      title: "Reject Cash-out Request",
+      placeholder: "Enter rejection reason (optional)...",
+      onConfirm: async (notes) => {
+        setNotesModal({ show: false });
+        await handleUpdateStatus(withdrawal.id, "rejected", notes || null);
+      },
+      onCancel: () => setNotesModal({ show: false })
+    });
   };
+
+  // Handle refresh payout status
+  const handleRefreshPayoutStatus = async (withdrawal) => {
+    if (!withdrawal.payoutBatchId) {
+      showToast("No payout batch ID found for this withdrawal.", "error");
+      return;
+    }
+
+    setProcessingId(withdrawal.id);
+    try {
+      const statusResult = await checkPayPalPayoutStatus(withdrawal.payoutBatchId, auth);
+      
+      // Update the withdrawal with the latest status
+      const withdrawalRef = doc(db, "withdrawalRequests", withdrawal.id);
+      const newStatus = statusResult.batchStatus || statusResult.payoutStatus || withdrawal.payoutStatus;
+      
+      await updateDoc(withdrawalRef, {
+        payoutStatus: newStatus,
+        payoutLastChecked: serverTimestamp()
+      });
+
+      // Map PayPal statuses to our statuses
+      let statusMessage = "Status updated";
+      if (newStatus === "SUCCESS" || newStatus === "COMPLETED") {
+        statusMessage = "Payout completed successfully!";
+      } else if (newStatus === "FAILED") {
+        statusMessage = "Payout failed. Please check PayPal for details.";
+      } else if (newStatus === "PENDING") {
+        statusMessage = "Payout is still processing...";
+      }
+
+      showToast(statusMessage, newStatus === "SUCCESS" || newStatus === "COMPLETED" ? "success" : "info");
+    } catch (error) {
+      console.error("Error refreshing payout status:", error);
+      showToast(`Failed to refresh status: ${error.message}`, "error");
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+
+  // Generate Cash-out Approvals Report
+  const generateCashoutReport = () => {
+    try {
+      const filteredData = getFilteredAndSortedWithdrawals();
+      
+      const pdf = new jsPDF();
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      let yPosition = 0;
+      const margin = 20;
+      const lineHeight = 8;
+      const sectionSpacing = 15;
+      
+      // Professional white and blue color scheme (same as financial report)
+      const navyBlue = [0, 51, 102];
+      const royalBlue = [25, 118, 210];
+      const lightBlue = [227, 242, 253];
+      const textDark = [33, 33, 33];
+      const textMedium = [97, 97, 97];
+      const textLight = [158, 158, 158];
+      const white = [255, 255, 255];
+      const borderGray = [224, 224, 224];
+      const green = [52, 199, 89];
+      const red = [255, 59, 48];
+      const yellow = [255, 149, 0];
+
+      // Helper function to add header (same style as financial report)
+      const addHeader = () => {
+        pdf.setFillColor(...white);
+        pdf.rect(0, 0, pageWidth, 60, "F");
+        
+        pdf.setFillColor(...navyBlue);
+        pdf.rect(0, 0, pageWidth, 8, "F");
+        
+        pdf.setTextColor(...navyBlue);
+        pdf.setFontSize(28);
+        pdf.setFont("helvetica", "bold");
+        pdf.text("Voyago", margin, 25);
+        
+        pdf.setFontSize(11);
+        pdf.setFont("helvetica", "normal");
+        pdf.setTextColor(...textMedium);
+        pdf.text("Administrative Report", margin, 35);
+        
+        pdf.setDrawColor(...royalBlue);
+        pdf.setLineWidth(1.5);
+        pdf.line(margin, 40, margin + 80, 40);
+        
+        pdf.setFontSize(9);
+        pdf.setTextColor(...textLight);
+        pdf.text("Cash-out Approvals Report", pageWidth - margin, 25, { align: "right" });
+        pdf.text(`Generated: ${new Date().toLocaleString('en-US', { 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric', 
+          hour: '2-digit', 
+          minute: '2-digit' 
+        })}`, pageWidth - margin, 35, { align: "right" });
+        
+        pdf.setDrawColor(...borderGray);
+        pdf.setLineWidth(0.5);
+        pdf.line(margin, 65, pageWidth - margin, 65);
+        
+        pdf.setTextColor(...textDark);
+        yPosition = 80;
+      };
+
+      const checkPageBreak = (requiredSpace = 20) => {
+        if (yPosition + requiredSpace > pageHeight - margin) {
+          pdf.addPage();
+          addHeader();
+          return true;
+        }
+        return false;
+      };
+
+      addHeader();
+
+      // Report Title
+      pdf.setFontSize(20);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...navyBlue);
+      pdf.text("Cash-out Approvals Report", margin, yPosition);
+      yPosition += sectionSpacing;
+
+      // Filter Info
+      checkPageBreak(15);
+      pdf.setFontSize(10);
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...textMedium);
+      const filterText = selectedFilter === "all" ? "All Statuses" : selectedFilter.charAt(0).toUpperCase() + selectedFilter.slice(1);
+      pdf.text(`Filter: ${filterText} | Total Records: ${filteredData.length}`, margin, yPosition);
+      yPosition += lineHeight + 5;
+
+      // Summary Statistics (same style as financial report)
+      checkPageBreak(100);
+      const summaryStartY = yPosition;
+      
+      // Calculate summary box height
+      let summaryBoxHeight = 15; // Title spacing
+      summaryBoxHeight += (lineHeight + 2) * 4; // 4 status lines
+      summaryBoxHeight += 5; // Divider spacing
+      summaryBoxHeight += (lineHeight + 2) * 3; // 3 total lines
+      summaryBoxHeight += 10; // Bottom padding
+      
+      pdf.setFillColor(...lightBlue);
+      pdf.roundedRect(margin, yPosition, pageWidth - (margin * 2), summaryBoxHeight, 3, 3, "F");
+      
+      pdf.setFontSize(11);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...navyBlue);
+      pdf.text("Summary Statistics", margin + 12, yPosition + 10);
+      
+      yPosition += 15;
+      
+      const totalAmount = filteredData.reduce((sum, w) => sum + (parseFloat(w.amount) || 0), 0);
+      const totalPayout = filteredData.reduce((sum, w) => sum + (parseFloat(w.payoutAmount) || 0), 0);
+      const totalFees = filteredData.reduce((sum, w) => sum + (parseFloat(w.totalFees) || 0), 0);
+      
+      const pendingCount = filteredData.filter(w => w.status === "pending").length;
+      const completedCount = filteredData.filter(w => w.status === "completed").length;
+      const rejectedCount = filteredData.filter(w => w.status === "rejected").length;
+
+      // Calculate amounts by status
+      const pendingAmount = filteredData.filter(w => w.status === "pending").reduce((sum, w) => sum + (parseFloat(w.amount) || 0), 0);
+      const completedAmount = filteredData.filter(w => w.status === "completed").reduce((sum, w) => sum + (parseFloat(w.amount) || 0), 0);
+      const rejectedAmount = filteredData.filter(w => w.status === "rejected").reduce((sum, w) => sum + (parseFloat(w.amount) || 0), 0);
+
+      pdf.setFontSize(9);
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...textDark);
+      
+      const valueX = pageWidth - margin - 12;
+      
+      pdf.text(`Total Requests: ${filteredData.length}`, margin + 12, yPosition);
+      pdf.text(`$${totalAmount.toFixed(2)}`, valueX, yPosition, { align: "right" });
+      yPosition += lineHeight + 2;
+      
+      pdf.text(`Pending: ${pendingCount}`, margin + 12, yPosition);
+      pdf.text(`$${pendingAmount.toFixed(2)}`, valueX, yPosition, { align: "right" });
+      yPosition += lineHeight + 2;
+      
+      pdf.text(`Completed: ${completedCount}`, margin + 12, yPosition);
+      pdf.text(`$${completedAmount.toFixed(2)}`, valueX, yPosition, { align: "right" });
+      yPosition += lineHeight + 2;
+      
+      pdf.text(`Rejected: ${rejectedCount}`, margin + 12, yPosition);
+      pdf.text(`$${rejectedAmount.toFixed(2)}`, valueX, yPosition, { align: "right" });
+      yPosition += lineHeight + 3;
+      
+      // Add total financial summary below with divider
+      pdf.setDrawColor(...royalBlue);
+      pdf.setLineWidth(0.5);
+      pdf.line(margin + 12, yPosition - 2, pageWidth - margin - 12, yPosition - 2);
+      yPosition += 5;
+      
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...navyBlue);
+      pdf.text("Total Amount:", margin + 12, yPosition);
+      pdf.setTextColor(...royalBlue);
+      pdf.text(`$${totalAmount.toFixed(2)}`, valueX, yPosition, { align: "right" });
+      yPosition += lineHeight + 2;
+      
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...navyBlue);
+      pdf.text("Total Payout:", margin + 12, yPosition);
+      pdf.setTextColor(...royalBlue);
+      pdf.text(`$${totalPayout.toFixed(2)}`, valueX, yPosition, { align: "right" });
+      yPosition += lineHeight + 2;
+      
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...navyBlue);
+      pdf.text("Total Fees:", margin + 12, yPosition);
+      pdf.setTextColor(...royalBlue);
+      pdf.text(`$${totalFees.toFixed(2)}`, valueX, yPosition, { align: "right" });
+      yPosition += lineHeight + 5;
+
+      // Withdrawals Table
+      checkPageBreak(30);
+      pdf.setFontSize(12);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...navyBlue);
+      pdf.text("Withdrawal Requests", margin, yPosition);
+      yPosition += lineHeight + 5;
+
+      if (filteredData.length === 0) {
+        pdf.setFontSize(10);
+        pdf.setFont("helvetica", "normal");
+        pdf.setTextColor(...textMedium);
+        pdf.text("No withdrawal requests found for the selected filter.", margin, yPosition);
+      } else {
+        // Table Header
+        checkPageBreak(30);
+        pdf.setFillColor(...navyBlue);
+        pdf.rect(margin, yPosition, pageWidth - (margin * 2), 12, "F");
+        
+        pdf.setFontSize(9);
+        pdf.setFont("helvetica", "bold");
+        pdf.setTextColor(...white);
+        pdf.text("Host", margin + 5, yPosition + 8);
+        pdf.text("Amount", margin + 60, yPosition + 8);
+        pdf.text("Payout", margin + 90, yPosition + 8);
+        pdf.text("Status", margin + 120, yPosition + 8);
+        pdf.text("Date", margin + 150, yPosition + 8);
+        
+        yPosition += 15;
+
+        // Table Rows
+        filteredData.forEach((withdrawal, index) => {
+          checkPageBreak(20);
+          
+          if (index % 2 === 0) {
+            pdf.setFillColor(...lightBlue);
+            pdf.rect(margin, yPosition - 5, pageWidth - (margin * 2), 10, "F");
+          }
+
+          pdf.setFontSize(8);
+          pdf.setFont("helvetica", "normal");
+          pdf.setTextColor(...textDark);
+          
+          const hostName = (withdrawal.hostName || "N/A").substring(0, 20);
+          const amount = `$${(parseFloat(withdrawal.amount) || 0).toFixed(2)}`;
+          const payout = withdrawal.payoutAmount ? `$${(parseFloat(withdrawal.payoutAmount) || 0).toFixed(2)}` : "N/A";
+          const status = withdrawal.status || "N/A";
+          const date = withdrawal.requestedAt?.toDate 
+            ? withdrawal.requestedAt.toDate().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+            : withdrawal.requestedAt 
+            ? new Date(withdrawal.requestedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+            : "N/A";
+
+          // Status color
+          if (status === "completed") {
+            pdf.setTextColor(...green);
+          } else if (status === "rejected") {
+            pdf.setTextColor(...red);
+          } else if (status === "pending") {
+            pdf.setTextColor(...yellow);
+          } else {
+            pdf.setTextColor(...textDark);
+          }
+
+          pdf.text(hostName, margin + 5, yPosition);
+          pdf.setTextColor(...textDark);
+          pdf.text(amount, margin + 60, yPosition);
+          pdf.text(payout, margin + 90, yPosition);
+          
+          // Status with color
+          if (status === "completed") {
+            pdf.setTextColor(...green);
+          } else if (status === "rejected") {
+            pdf.setTextColor(...red);
+          } else if (status === "pending") {
+            pdf.setTextColor(...yellow);
+          }
+          pdf.text(status.charAt(0).toUpperCase() + status.slice(1), margin + 120, yPosition);
+          pdf.setTextColor(...textDark);
+          pdf.text(date, margin + 150, yPosition);
+          
+          yPosition += 10;
+        });
+      }
+
+      // Save PDF
+      pdf.save(`Cash-out-Approvals-Report-${new Date().toISOString().split('T')[0]}.pdf`);
+      
+      showToast("Cash-out Approvals report generated successfully!", "success");
+    } catch (error) {
+      console.error("Error generating cash-out report:", error);
+      showToast("Failed to generate report. Please try again.", "error");
+    }
+  };
+
+  // Filter and sort withdrawals
+  const getFilteredAndSortedWithdrawals = () => {
+    let filtered = withdrawals.filter(w => {
+      // Status filter
+      if (selectedFilter !== "all" && w.status !== selectedFilter) return false;
+      
+      // Search filter
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const hostName = (w.hostName || "").toLowerCase();
+        const hostEmail = (w.hostEmail || "").toLowerCase();
+        const paypalEmail = (w.paypalEmail || "").toLowerCase();
+        
+        if (!hostName.includes(query) && !hostEmail.includes(query) && !paypalEmail.includes(query)) {
+          return false;
+        }
+      }
+      
+      return true;
+    });
+
+    // Sort
+    filtered.sort((a, b) => {
+      let aValue, bValue;
+      
+      if (sortBy === "date") {
+        aValue = a.requestedAt?.toDate ? a.requestedAt.toDate().getTime() : (a.requestedAt ? new Date(a.requestedAt).getTime() : 0);
+        bValue = b.requestedAt?.toDate ? b.requestedAt.toDate().getTime() : (b.requestedAt ? new Date(b.requestedAt).getTime() : 0);
+      } else if (sortBy === "amount") {
+        aValue = parseFloat(a.amount) || 0;
+        bValue = parseFloat(b.amount) || 0;
+      } else {
+        return 0;
+      }
+      
+      if (sortOrder === "asc") {
+        return aValue - bValue;
+      } else {
+        return bValue - aValue;
+      }
+    });
+
+    return filtered;
+  };
+
+  const filteredWithdrawals = getFilteredAndSortedWithdrawals();
 
   if (loading) {
     return (
@@ -3349,246 +4463,222 @@ const CashoutApprovalsContent = () => {
 
   return (
     <div className="space-y-6 animate-fadeInUp">
+      {/* Header with Search and Filters */}
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-        <h2 className="text-2xl font-light text-[#1C1C1E] mb-4">Cash-out Approvals</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-2xl font-light text-[#1C1C1E]">Cash-out Approvals</h2>
+          <button
+            onClick={generateCashoutReport}
+            disabled={loading}
+            className="bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl px-6 py-3 flex items-center gap-3 hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span className="font-light">Generate Report</span>
+          </button>
+        </div>
         
-        <div className="flex gap-2 flex-wrap">
-          {["pending", "approved", "completed", "rejected"].map((filter) => (
-            <button
-              key={filter}
-              onClick={() => setSelectedFilter(filter)}
-              className={`px-4 py-2 rounded-xl text-sm font-light transition-all ${
-                selectedFilter === filter
-                  ? "bg-[#0071E3] text-white"
-                  : "bg-gray-100 text-[#8E8E93] hover:bg-gray-200"
-              }`}
+        {/* Search Bar */}
+        <div className="mb-4">
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <svg className="w-5 h-5 text-[#8E8E93]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by host name or email..."
+              className="w-full pl-11 pr-4 py-2.5 bg-[#F2F2F7] rounded-xl text-sm text-[#1C1C1E] placeholder:text-[#8E8E93] focus:outline-none focus:ring-2 focus:ring-[#0071E3]/20 focus:bg-white transition-all"
+            />
+          </div>
+        </div>
+
+        {/* Filter Tabs and Sort */}
+        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+          <div className="flex gap-2 flex-wrap">
+            {["all", "pending", "completed", "rejected"].map((filter) => (
+              <button
+                key={filter}
+                onClick={() => setSelectedFilter(filter)}
+                className={`px-4 py-2 rounded-xl text-sm font-light transition-all ${
+                  selectedFilter === filter
+                    ? "bg-[#0071E3] text-white"
+                    : "bg-gray-100 text-[#8E8E93] hover:bg-gray-200"
+                }`}
+              >
+                {filter === "all" ? "All" : filter.charAt(0).toUpperCase() + filter.slice(1)} ({filter === "all" ? withdrawals.length : withdrawals.filter(w => w.status === filter).length})
+              </button>
+            ))}
+          </div>
+          
+          {/* Sort Controls */}
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-[#8E8E93]">Sort by:</span>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="px-3 py-2 bg-[#F2F2F7] rounded-xl text-sm text-[#1C1C1E] focus:outline-none focus:ring-2 focus:ring-[#0071E3]/20"
             >
-              {filter.charAt(0).toUpperCase() + filter.slice(1)} ({withdrawals.filter(w => w.status === filter).length})
+              <option value="date">Date</option>
+              <option value="amount">Amount</option>
+            </select>
+            <button
+              onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+              className="p-2 bg-[#F2F2F7] rounded-xl hover:bg-gray-200 transition-all"
+              title={`Sort ${sortOrder === "asc" ? "Descending" : "Ascending"}`}
+            >
+              <svg className="w-4 h-4 text-[#1C1C1E]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {sortOrder === "asc" ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                )}
+              </svg>
             </button>
-          ))}
+          </div>
         </div>
       </div>
 
+      {/* Withdrawals List */}
       {filteredWithdrawals.length === 0 ? (
         <div className="bg-white rounded-2xl p-12 shadow-sm border border-gray-100 text-center">
-          <p className="text-[#8E8E93] font-light">No {selectedFilter} cash-out requests</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {filteredWithdrawals.map((withdrawal) => (
-            <div
-              key={withdrawal.id}
-              className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all"
-            >
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <h3 className="text-lg font-medium text-[#1C1C1E]">{withdrawal.hostName || withdrawal.hostEmail}</h3>
-                    <span className={`px-3 py-1 rounded-full text-xs font-light capitalize ${getStatusBadge(withdrawal.status)}`}>
-                      {withdrawal.status}
-                    </span>
-                  </div>
-                  <p className="text-sm text-[#8E8E93] font-light mb-1">Email: {withdrawal.hostEmail}</p>
-                  <p className="text-sm text-[#8E8E93] font-light mb-1">PayPal: {withdrawal.paypalEmail}</p>
-                  <p className="text-2xl font-light text-[#1C1C1E] mt-3">{formatCurrency(withdrawal.amount)}</p>
-                  {withdrawal.requestedAt && (
-                    <p className="text-xs text-[#8E8E93] font-light mt-2">
-                      Requested: {withdrawal.requestedAt.toDate ? withdrawal.requestedAt.toDate().toLocaleString() : new Date(withdrawal.requestedAt).toLocaleString()}
-                    </p>
-                  )}
-                  {withdrawal.adminNotes && (
-                    <p className="text-sm text-[#8E8E93] font-light mt-2 italic">
-                      Notes: {withdrawal.adminNotes}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {withdrawal.status === "pending" && (
-                <div className="flex gap-3 mt-4 pt-4 border-t border-gray-200">
-                  <button
-                    onClick={() => handleUpdateStatus(withdrawal.id, "approved")}
-                    className="flex-1 bg-[#0071E3] text-white rounded-xl px-4 py-2 font-light hover:bg-[#0051D0] transition-all"
-                  >
-                    Approve
-                  </button>
-                  <button
-                    onClick={() => {
-                      const notes = prompt("Enter rejection reason (optional):");
-                      if (notes !== null) {
-                        handleUpdateStatus(withdrawal.id, "rejected", notes);
-                      }
-                    }}
-                    className="flex-1 bg-red-500 text-white rounded-xl px-4 py-2 font-light hover:bg-red-600 transition-all"
-                  >
-                    Reject
-                  </button>
-                </div>
-              )}
-              {withdrawal.status === "approved" && (
-                <div className="flex gap-3 mt-4 pt-4 border-t border-gray-200">
-                  <button
-                    onClick={() => {
-                      const notes = prompt("Enter completion notes (optional):");
-                      if (notes !== null) {
-                        handleUpdateStatus(withdrawal.id, "completed", notes);
-                      }
-                    }}
-                    className="flex-1 bg-[#34C759] text-white rounded-xl px-4 py-2 font-light hover:bg-[#30D158] transition-all"
-                  >
-                    Mark as Completed
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// Pending Payouts Content Component
-const PendingPayoutsContent = () => {
-  const [payouts, setPayouts] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetchPayouts();
-    
-    const unsubscribe = onSnapshot(
-      collection(db, "adminPayments"),
-      (snapshot) => {
-        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setPayouts(data.filter(p => !p.withdrawalRequestId));
-        setLoading(false);
-      },
-      (error) => {
-        console.error("Error fetching payouts:", error);
-        setLoading(false);
-      }
-    );
-
-    return () => unsubscribe();
-  }, []);
-
-  const fetchPayouts = async () => {
-    try {
-      setLoading(true);
-      const payoutsQuery = query(collection(db, "adminPayments"));
-      const snapshot = await getDocs(payoutsQuery);
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setPayouts(data.filter(p => !p.withdrawalRequestId));
-    } catch (error) {
-      console.error("Error fetching payouts:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(amount);
-  };
-
-  if (loading) {
-    return (
-      <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-sm border border-gray-100 animate-fadeInUp">
-        <div className="text-center py-12">
-          <div className="text-[#8E8E93] font-light">Loading pending payouts...</div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6 animate-fadeInUp">
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-        <h2 className="text-2xl font-light text-[#1C1C1E] mb-2">Pending Payouts</h2>
-        <p className="text-sm text-[#8E8E93] font-light mb-4">
-          Payments received by admin that are awaiting host withdrawal requests
-        </p>
-        <div className="text-right">
-          <p className="text-sm text-[#8E8E93] font-light">Total Pending</p>
-          <p className="text-2xl font-light text-[#1C1C1E]">
-            {formatCurrency(payouts.reduce((sum, p) => sum + (p.amount || 0), 0))}
+          <p className="text-[#8E8E93] font-light">
+            {searchQuery 
+              ? `No ${selectedFilter} cash-out requests match your search`
+              : `No ${selectedFilter} cash-out requests`
+            }
           </p>
         </div>
-      </div>
-
-      {payouts.length === 0 ? (
-        <div className="bg-white rounded-2xl p-12 shadow-sm border border-gray-100 text-center">
-          <p className="text-[#8E8E93] font-light">No pending payouts</p>
-        </div>
       ) : (
         <div className="space-y-4">
-          {payouts.map((payout) => (
-            <div
-              key={payout.id}
-              className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <h3 className="text-lg font-medium text-[#1C1C1E] mb-2">Booking Payment</h3>
-                  <p className="text-sm text-[#8E8E93] font-light mb-1">Booking ID: {payout.bookingId}</p>
-                  <p className="text-sm text-[#8E8E93] font-light mb-1">Host ID: {payout.hostId}</p>
-                  <p className="text-sm text-[#8E8E93] font-light mb-1">Guest ID: {payout.guestId}</p>
-                  {payout.createdAt && (
-                    <p className="text-xs text-[#8E8E93] font-light mt-2">
-                      Received: {payout.createdAt.toDate ? payout.createdAt.toDate().toLocaleString() : new Date(payout.createdAt).toLocaleString()}
-                    </p>
-                  )}
+          {filteredWithdrawals.map((withdrawal) => {
+            const isProcessing = processingId === withdrawal.id;
+            
+            return (
+              <div
+                key={withdrawal.id}
+                className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all"
+              >
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <h3 className="text-lg font-medium text-[#1C1C1E]">{withdrawal.hostName || withdrawal.hostEmail}</h3>
+                      <span className={`px-3 py-1 rounded-full text-xs font-light capitalize ${getStatusBadge(withdrawal.status)}`}>
+                        {withdrawal.status}
+                      </span>
+                      {isProcessing && (
+                        <span className="px-3 py-1 rounded-full text-xs font-light bg-blue-100 text-blue-700 flex items-center gap-1">
+                          <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          Processing...
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-[#8E8E93] font-light mb-1">Email: {withdrawal.hostEmail}</p>
+                    <p className="text-sm text-[#8E8E93] font-light mb-1">PayPal: {withdrawal.paypalEmail}</p>
+                    <p className="text-2xl font-light text-[#1C1C1E] mt-3">{formatCurrency(withdrawal.amount)}</p>
+                    {withdrawal.requestedAt && (
+                      <p className="text-xs text-[#8E8E93] font-light mt-2">
+                        Requested: {withdrawal.requestedAt.toDate ? withdrawal.requestedAt.toDate().toLocaleString() : new Date(withdrawal.requestedAt).toLocaleString()}
+                      </p>
+                    )}
+                    {withdrawal.payoutAmount && (
+                      <p className="text-sm text-green-600 font-medium mt-2">
+                        Payout: {formatCurrency(withdrawal.payoutAmount)}
+                        {withdrawal.totalFees > 0 && (
+                          <span className="text-xs text-[#8E8E93] ml-2">
+                            (Fees: {formatCurrency(withdrawal.totalFees)})
+                          </span>
+                        )}
+                      </p>
+                    )}
+                    {withdrawal.adminNotes && (
+                      <p className="text-sm text-[#8E8E93] font-light mt-2 italic">
+                        Notes: {withdrawal.adminNotes}
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-2xl font-light text-[#34C759]">{formatCurrency(payout.amount)}</p>
-                  <span className="px-3 py-1 rounded-full text-xs font-light bg-yellow-100 text-yellow-700 mt-2 inline-block">
-                    Pending
-                  </span>
-                </div>
+
+                {/* Action Buttons */}
+                {withdrawal.status === "pending" && (
+                  <div className="flex gap-3 mt-4 pt-4 border-t border-gray-200">
+                    <button
+                      onClick={() => handleApprove(withdrawal)}
+                      disabled={isProcessing}
+                      className="flex-1 bg-[#0071E3] text-white rounded-xl px-4 py-2 font-light hover:bg-[#0051D0] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {isProcessing ? (
+                        <>
+                          <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          Processing...
+                        </>
+                      ) : (
+                        "Approve & Send Payment"
+                      )}
+                    </button>
+                    <button
+                      onClick={() => handleReject(withdrawal)}
+                      disabled={isProcessing}
+                      className="flex-1 bg-red-500 text-white rounded-xl px-4 py-2 font-light hover:bg-red-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
-    </div>
-  );
-};
 
-// Termination Appeals Content Component
-const TerminationAppealsContent = () => {
-  const [appeals, setAppeals] = useState([]);
-  const [loading, setLoading] = useState(true);
+      {/* Modals */}
+      {confirmModal.show && (
+        <ConfirmModal
+          title={confirmModal.title}
+          message={confirmModal.message}
+          type={confirmModal.type}
+          confirmText={confirmModal.confirmText}
+          onConfirm={confirmModal.onConfirm}
+          onCancel={confirmModal.onCancel}
+        />
+      )}
 
-  useEffect(() => {
-    // TODO: Implement termination appeals fetching
-    setLoading(false);
-  }, []);
+      {notesModal.show && (
+        <NotesModal
+          title={notesModal.title}
+          placeholder={notesModal.placeholder}
+          onConfirm={notesModal.onConfirm}
+          onCancel={notesModal.onCancel}
+        />
+      )}
 
-  if (loading) {
-    return (
-      <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-sm border border-gray-100 animate-fadeInUp">
-        <div className="text-center py-12">
-          <div className="text-[#8E8E93] font-light">Loading termination appeals...</div>
-        </div>
-      </div>
-    );
-  }
+      {feePreviewModal.show && (
+        <FeePreviewModal
+          withdrawal={feePreviewModal.withdrawal}
+          feeBreakdown={feePreviewModal.feeBreakdown}
+          onConfirm={feePreviewModal.onConfirm}
+          onCancel={feePreviewModal.onCancel}
+        />
+      )}
 
-  return (
-    <div className="space-y-6 animate-fadeInUp">
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-        <h2 className="text-2xl font-light text-[#1C1C1E] mb-2">Termination Appeals</h2>
-        <p className="text-sm text-[#8E8E93] font-light mb-4">
-          Review and process user termination appeals
-        </p>
-      </div>
-
-      <div className="bg-white rounded-2xl p-12 shadow-sm border border-gray-100 text-center">
-        <p className="text-[#8E8E93] font-light">No termination appeals at this time</p>
-        <p className="text-xs text-[#8E8E93] font-light mt-2">This feature will be implemented soon</p>
-      </div>
+      {/* Toast Notification */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
     </div>
   );
 };
@@ -4119,476 +5209,491 @@ const SubscriptionsContent = () => {
   const activeSubscriptions = hosts.filter(h => h.subscriptionStatus === "active").length;
   const inactiveSubscriptions = hosts.filter(h => h.subscriptionStatus !== "active").length;
 
-  const handleGenerateSubscriptionReport = () => {
+  // Helper function to safely convert Firestore timestamps to Date objects
+  const safeDateConvert = (timestamp) => {
+    if (!timestamp) return null;
+    if (timestamp.toDate && typeof timestamp.toDate === 'function') {
+      return timestamp.toDate();
+    }
+    if (timestamp instanceof Date) {
+      return timestamp;
+    }
+    if (typeof timestamp === 'string' || typeof timestamp === 'number') {
+      const date = new Date(timestamp);
+      return isNaN(date.getTime()) ? null : date;
+    }
+    return null;
+  };
+
+  // Generate subscription report data
+  const generateSubscriptionReport = () => {
     try {
-      setGeneratingReport(true);
+      // Calculate plan statistics
+      const planStats = {
+        starter: { count: 0, active: 0, inactive: 0 },
+        pro: { count: 0, active: 0, inactive: 0 },
+        elite: { count: 0, active: 0, inactive: 0 }
+      };
 
-      const pdf = new jsPDF();
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      let yPosition = 0;
-      const margin = 15;
-      const lineHeight = 7;
-      const sectionSpacing = 15;
+      filteredHosts.forEach(host => {
+        const plan = host.subscriptionPlan || "starter";
+        if (planStats[plan]) {
+          planStats[plan].count++;
+          if (host.subscriptionStatus === "active") {
+            planStats[plan].active++;
+          } else {
+            planStats[plan].inactive++;
+          }
+        }
+      });
 
-      // Brand colors
-      const primaryBlue = [0, 113, 227]; // #0071E3
-      const darkBlue = [0, 81, 208]; // #0051D0
-      const darkGray = [28, 28, 30]; // #1C1C1E
-      const lightGray = [142, 142, 147]; // #8E8E93
-      const bgGray = [245, 245, 247]; // #F5F5F7
-      const green = [52, 199, 89]; // #34C759
-      const red = [255, 59, 48]; // #FF3B30
-      const white = [255, 255, 255];
+      // Calculate revenue from subscriptions
+      const planPrices = {
+        starter: 29,
+        pro: 79,
+        elite: 199
+      };
 
-      // Helper function to add header on each page
-      const addHeader = () => {
-        // Header background with gradient effect
-        pdf.setFillColor(...primaryBlue);
-        pdf.rect(0, 0, pageWidth, 55, "F");
-        
-        // Secondary blue bar for depth
-        pdf.setFillColor(...darkBlue);
-        pdf.rect(0, 50, pageWidth, 5, "F");
-        
-        pdf.setTextColor(255, 255, 255);
-        pdf.setFontSize(26);
-        pdf.setFont("helvetica", "bold");
-        pdf.text("Voyago", margin, 28);
-        
-        pdf.setFontSize(11);
-        pdf.setFont("helvetica", "normal");
-        pdf.setTextColor(255, 255, 255, 0.9);
-        pdf.text("Subscriptions Report", margin, 40);
-        
-        // Date in header (right side)
-        const dateStr = new Date().toLocaleDateString('en-US', { 
+      const monthlyRevenue = filteredHosts
+        .filter(h => h.subscriptionStatus === "active")
+        .reduce((sum, host) => {
+          const plan = host.subscriptionPlan || "starter";
+          return sum + (planPrices[plan] || 0);
+        }, 0);
+
+      return {
+        title: "Subscription Report",
+        generatedAt: new Date().toLocaleString('en-US', { 
           year: 'numeric', 
-          month: 'short', 
-          day: 'numeric'
-        });
-        pdf.setFontSize(9);
-        pdf.setTextColor(255, 255, 255, 0.8);
-        pdf.text(dateStr, pageWidth - margin, 28, { align: "right" });
-        
-        pdf.setTextColor(...darkGray);
-        yPosition = 70;
+          month: 'long', 
+          day: 'numeric', 
+          hour: '2-digit', 
+          minute: '2-digit' 
+        }),
+        summary: {
+          totalHosts: filteredHosts.length,
+          activeSubscriptions: activeSubscriptions,
+          inactiveSubscriptions: inactiveSubscriptions,
+          monthlyRevenue: monthlyRevenue,
+          planStats: planStats
+        },
+        hosts: filteredHosts.map(host => ({
+          id: host.id,
+          name: host.displayName || host.name || "Unknown",
+          email: host.email || "N/A",
+          plan: host.subscriptionPlan || "starter",
+          status: host.subscriptionStatus || "inactive",
+          activeListings: host.activeListingsCount || 0,
+          listingLimit: host.listingLimit || 3,
+          startDate: safeDateConvert(host.subscriptionStartDate) || safeDateConvert(host.createdAt)
+        }))
       };
-
-      // Helper function to add a new page if needed
-      const checkPageBreak = (requiredSpace = 20) => {
-        if (yPosition + requiredSpace > pageHeight - margin - 15) {
-          pdf.addPage();
-          addHeader();
-          return true;
-        }
-        return false;
-      };
-
-      // Add header to first page
-      addHeader();
-
-      // Report Title with Subtitle
-      pdf.setFontSize(20);
-      pdf.setFont("helvetica", "bold");
-      pdf.setTextColor(...darkGray);
-      
-      let reportTitle = "Host Subscriptions Overview";
-      if (filter !== "all" || planFilter !== "all") {
-        let subtitle = "";
-        if (filter !== "all") {
-          subtitle += filter.charAt(0).toUpperCase() + filter.slice(1);
-        }
-        if (planFilter !== "all") {
-          if (subtitle) subtitle += " • ";
-          const planName = planFilter.charAt(0).toUpperCase() + planFilter.slice(1);
-          subtitle += `${planName} Plan`;
-        }
-        pdf.text(reportTitle, margin, yPosition);
-        yPosition += 8;
-        pdf.setFontSize(11);
-        pdf.setFont("helvetica", "normal");
-        pdf.setTextColor(...lightGray);
-        pdf.text(subtitle, margin, yPosition);
-      } else {
-        pdf.text(reportTitle, margin, yPosition);
-      }
-      
-      yPosition += 15;
-
-      // Summary Cards Section
-      checkPageBreak(60);
-      
-      const activeCount = filteredHosts.filter(h => h.subscriptionStatus === "active").length;
-      const inactiveCount = filteredHosts.filter(h => h.subscriptionStatus !== "active").length;
-      const planCounts = {
-        starter: filteredHosts.filter(h => h.subscriptionPlan === "starter").length,
-        pro: filteredHosts.filter(h => h.subscriptionPlan === "pro").length,
-        elite: filteredHosts.filter(h => h.subscriptionPlan === "elite").length
-      };
-
-      // Summary Title
-      pdf.setFontSize(14);
-      pdf.setFont("helvetica", "bold");
-      pdf.setTextColor(...darkGray);
-      pdf.text("Summary Statistics", margin, yPosition);
-      yPosition += 10;
-
-      // Summary Cards Row 1: Total, Active, Inactive
-      const cardWidth = (pageWidth - (margin * 2) - 10) / 3;
-      const cardHeight = 28;
-      const cardSpacing = 5;
-      
-      // Total Hosts Card
-      pdf.setFillColor(...bgGray);
-      pdf.roundedRect(margin, yPosition, cardWidth, cardHeight, 4, 4, "F");
-      pdf.setDrawColor(200, 200, 200);
-      pdf.setLineWidth(0.5);
-      pdf.roundedRect(margin, yPosition, cardWidth, cardHeight, 4, 4, "S");
-      
-      pdf.setFontSize(9);
-      pdf.setFont("helvetica", "normal");
-      pdf.setTextColor(...lightGray);
-      pdf.text("Total Hosts", margin + 8, yPosition + 8);
-      pdf.setFontSize(18);
-      pdf.setFont("helvetica", "bold");
-      pdf.setTextColor(...primaryBlue);
-      pdf.text(`${filteredHosts.length}`, margin + 8, yPosition + 20);
-
-      // Active Subscriptions Card
-      pdf.setFillColor(...[green[0], green[1], green[2], 0.1]);
-      pdf.roundedRect(margin + cardWidth + cardSpacing, yPosition, cardWidth, cardHeight, 4, 4, "F");
-      pdf.setDrawColor(...green);
-      pdf.setLineWidth(0.5);
-      pdf.roundedRect(margin + cardWidth + cardSpacing, yPosition, cardWidth, cardHeight, 4, 4, "S");
-      
-      pdf.setFontSize(9);
-      pdf.setFont("helvetica", "normal");
-      pdf.setTextColor(...lightGray);
-      pdf.text("Active", margin + cardWidth + cardSpacing + 8, yPosition + 8);
-      pdf.setFontSize(18);
-      pdf.setFont("helvetica", "bold");
-      pdf.setTextColor(...green);
-      pdf.text(`${activeCount}`, margin + cardWidth + cardSpacing + 8, yPosition + 20);
-
-      // Inactive Subscriptions Card
-      pdf.setFillColor(...[red[0], red[1], red[2], 0.1]);
-      pdf.roundedRect(margin + (cardWidth + cardSpacing) * 2, yPosition, cardWidth, cardHeight, 4, 4, "F");
-      pdf.setDrawColor(...red);
-      pdf.setLineWidth(0.5);
-      pdf.roundedRect(margin + (cardWidth + cardSpacing) * 2, yPosition, cardWidth, cardHeight, 4, 4, "S");
-      
-      pdf.setFontSize(9);
-      pdf.setFont("helvetica", "normal");
-      pdf.setTextColor(...lightGray);
-      pdf.text("Inactive", margin + (cardWidth + cardSpacing) * 2 + 8, yPosition + 8);
-      pdf.setFontSize(18);
-      pdf.setFont("helvetica", "bold");
-      pdf.setTextColor(...red);
-      pdf.text(`${inactiveCount}`, margin + (cardWidth + cardSpacing) * 2 + 8, yPosition + 20);
-
-      yPosition += cardHeight + 15;
-
-      // Plan Breakdown Section
-      checkPageBreak(45);
-      
-      pdf.setFontSize(14);
-      pdf.setFont("helvetica", "bold");
-      pdf.setTextColor(...darkGray);
-      pdf.text("Plan Distribution", margin, yPosition);
-      yPosition += 10;
-
-      // Plan breakdown cards
-      const planCardWidth = (pageWidth - (margin * 2) - 10) / 3;
-      
-      // Starter Plan Card
-      pdf.setFillColor(...bgGray);
-      pdf.roundedRect(margin, yPosition, planCardWidth, 22, 4, 4, "F");
-      pdf.setDrawColor(200, 200, 200);
-      pdf.setLineWidth(0.5);
-      pdf.roundedRect(margin, yPosition, planCardWidth, 22, 4, 4, "S");
-      
-      pdf.setFontSize(10);
-      pdf.setFont("helvetica", "bold");
-      pdf.setTextColor(...darkGray);
-      pdf.text("Starter", margin + 8, yPosition + 8);
-      pdf.setFontSize(11);
-      pdf.setFont("helvetica", "normal");
-      pdf.setTextColor(...lightGray);
-      pdf.text("$29/month", margin + 8, yPosition + 14);
-      pdf.setFontSize(14);
-      pdf.setFont("helvetica", "bold");
-      pdf.setTextColor(...primaryBlue);
-      pdf.text(`${planCounts.starter}`, margin + 8, yPosition + 22);
-
-      // Pro Plan Card
-      pdf.setFillColor(...[primaryBlue[0], primaryBlue[1], primaryBlue[2], 0.1]);
-      pdf.roundedRect(margin + planCardWidth + cardSpacing, yPosition, planCardWidth, 22, 4, 4, "F");
-      pdf.setDrawColor(...primaryBlue);
-      pdf.setLineWidth(0.5);
-      pdf.roundedRect(margin + planCardWidth + cardSpacing, yPosition, planCardWidth, 22, 4, 4, "S");
-      
-      pdf.setFontSize(10);
-      pdf.setFont("helvetica", "bold");
-      pdf.setTextColor(...darkGray);
-      pdf.text("Pro", margin + planCardWidth + cardSpacing + 8, yPosition + 8);
-      pdf.setFontSize(11);
-      pdf.setFont("helvetica", "normal");
-      pdf.setTextColor(...lightGray);
-      pdf.text("$79/month", margin + planCardWidth + cardSpacing + 8, yPosition + 14);
-      pdf.setFontSize(14);
-      pdf.setFont("helvetica", "bold");
-      pdf.setTextColor(...primaryBlue);
-      pdf.text(`${planCounts.pro}`, margin + planCardWidth + cardSpacing + 8, yPosition + 22);
-
-      // Elite Plan Card
-      pdf.setFillColor(...[128, 90, 213, 0.1]); // Purple tint
-      pdf.roundedRect(margin + (planCardWidth + cardSpacing) * 2, yPosition, planCardWidth, 22, 4, 4, "F");
-      pdf.setDrawColor(128, 90, 213);
-      pdf.setLineWidth(0.5);
-      pdf.roundedRect(margin + (planCardWidth + cardSpacing) * 2, yPosition, planCardWidth, 22, 4, 4, "S");
-      
-      pdf.setFontSize(10);
-      pdf.setFont("helvetica", "bold");
-      pdf.setTextColor(...darkGray);
-      pdf.text("Elite", margin + (planCardWidth + cardSpacing) * 2 + 8, yPosition + 8);
-      pdf.setFontSize(11);
-      pdf.setFont("helvetica", "normal");
-      pdf.setTextColor(...lightGray);
-      pdf.text("$199/month", margin + (planCardWidth + cardSpacing) * 2 + 8, yPosition + 14);
-      pdf.setFontSize(14);
-      pdf.setFont("helvetica", "bold");
-      pdf.setTextColor(128, 90, 213);
-      pdf.text(`${planCounts.elite}`, margin + (planCardWidth + cardSpacing) * 2 + 8, yPosition + 22);
-
-      yPosition += 35;
-
-      // Host Details Table Section
-      checkPageBreak(35);
-      
-      pdf.setFontSize(16);
-      pdf.setFont("helvetica", "bold");
-      pdf.setTextColor(...darkGray);
-      pdf.text("Host Details", margin, yPosition);
-      yPosition += 12;
-
-      if (filteredHosts.length === 0) {
-        pdf.setFontSize(11);
-        pdf.setFont("helvetica", "normal");
-        pdf.setTextColor(...lightGray);
-        pdf.text("No hosts found matching the selected filters.", margin, yPosition);
-      } else {
-        // Define column widths as percentages of table width
-        const tableWidth = pageWidth - (margin * 2);
-        const colWidthPercentages = {
-          host: 0.25,      // 25%
-          email: 0.30,     // 30%
-          plan: 0.12,      // 12%
-          status: 0.12,    // 12%
-          listings: 0.10,  // 10%
-          date: 0.11       // 11%
-        };
-        
-        const colWidths = {
-          host: tableWidth * colWidthPercentages.host,
-          email: tableWidth * colWidthPercentages.email,
-          plan: tableWidth * colWidthPercentages.plan,
-          status: tableWidth * colWidthPercentages.status,
-          listings: tableWidth * colWidthPercentages.listings,
-          date: tableWidth * colWidthPercentages.date
-        };
-        
-        const rowHeight = 12;
-        const headerHeight = 11;
-        const cellPadding = 4;
-
-        // Table header with better styling
-        checkPageBreak(headerHeight + 5);
-        
-        // Header background with rounded top corners
-        pdf.setFillColor(...primaryBlue);
-        pdf.roundedRect(margin, yPosition, tableWidth, headerHeight, 3, 3, "F");
-        
-        // Header text with proper alignment
-        pdf.setFontSize(9);
-        pdf.setFont("helvetica", "bold");
-        pdf.setTextColor(255, 255, 255);
-        
-        let xPos = margin + cellPadding;
-        pdf.text("Host Name", xPos, yPosition + 7);
-        xPos += colWidths.host;
-        pdf.text("Email Address", xPos, yPosition + 7);
-        xPos += colWidths.email;
-        pdf.text("Plan", xPos, yPosition + 7);
-        xPos += colWidths.plan;
-        pdf.text("Status", xPos, yPosition + 7);
-        xPos += colWidths.status;
-        pdf.text("Listings", xPos, yPosition + 7);
-        xPos += colWidths.listings;
-        pdf.text("Start Date", xPos, yPosition + 7);
-        
-        yPosition += headerHeight + 2;
-
-        // Table rows with borders
-        filteredHosts.forEach((host, index) => {
-          checkPageBreak(rowHeight + 5);
-          
-          const planDetails = getPlanDetails(host.subscriptionPlan);
-          const isActive = host.subscriptionStatus === "active";
-          
-          // Row background (alternate)
-          if (index % 2 === 0) {
-            pdf.setFillColor(...bgGray);
-            pdf.rect(margin, yPosition, tableWidth, rowHeight, "F");
-          }
-
-          // Row borders
-          pdf.setDrawColor(220, 220, 220);
-          pdf.setLineWidth(0.3);
-          pdf.line(margin, yPosition, margin + tableWidth, yPosition);
-          pdf.line(margin, yPosition + rowHeight, margin + tableWidth, yPosition + rowHeight);
-          
-          // Vertical dividers
-          xPos = margin + colWidths.host;
-          pdf.line(xPos, yPosition, xPos, yPosition + rowHeight);
-          xPos += colWidths.email;
-          pdf.line(xPos, yPosition, xPos, yPosition + rowHeight);
-          xPos += colWidths.plan;
-          pdf.line(xPos, yPosition, xPos, yPosition + rowHeight);
-          xPos += colWidths.status;
-          pdf.line(xPos, yPosition, xPos, yPosition + rowHeight);
-          xPos += colWidths.listings;
-          pdf.line(xPos, yPosition, xPos, yPosition + rowHeight);
-
-          pdf.setFontSize(8);
-          pdf.setFont("helvetica", "normal");
-          pdf.setTextColor(...darkGray);
-
-          // Host name
-          xPos = margin + cellPadding;
-          const hostName = host.displayName || host.name || "Unknown";
-          const maxHostNameWidth = colWidths.host - (cellPadding * 2);
-          if (pdf.getTextWidth(hostName) > maxHostNameWidth) {
-            const truncated = hostName.substring(0, Math.floor(hostName.length * 0.75)) + "...";
-            pdf.text(truncated, xPos, yPosition + 7, { maxWidth: maxHostNameWidth });
-          } else {
-            pdf.text(hostName, xPos, yPosition + 7);
-          }
-
-          // Email
-          xPos += colWidths.host;
-          const email = host.email || "N/A";
-          const maxEmailWidth = colWidths.email - (cellPadding * 2);
-          if (pdf.getTextWidth(email) > maxEmailWidth) {
-            const truncated = email.substring(0, Math.floor(email.length * 0.75)) + "...";
-            pdf.text(truncated, xPos, yPosition + 7, { maxWidth: maxEmailWidth });
-          } else {
-            pdf.text(email, xPos, yPosition + 7);
-          }
-
-          // Plan
-          xPos += colWidths.email;
-          pdf.setFont("helvetica", "bold");
-          pdf.setFontSize(8);
-          pdf.setTextColor(...darkGray);
-          pdf.text(planDetails.name, xPos, yPosition + 7);
-
-          // Status with colored badge
-          xPos += colWidths.plan;
-          const statusText = isActive ? "Active" : "Inactive";
-          pdf.setFontSize(7);
-          const statusTextWidth = pdf.getTextWidth(statusText);
-          const statusWidth = statusTextWidth + 6;
-          const statusX = xPos + (colWidths.status - statusWidth) / 2;
-          const statusY = yPosition + 2;
-          
-          // Status badge background
-          pdf.setFillColor(...(isActive ? green : red));
-          pdf.roundedRect(statusX, statusY, statusWidth, 8, 2, 2, "F");
-          
-          // Status badge text
-          pdf.setTextColor(255, 255, 255);
-          pdf.setFont("helvetica", "bold");
-          pdf.text(statusText, statusX + 3, statusY + 6);
-
-          // Listings
-          xPos += colWidths.status;
-          pdf.setFontSize(8);
-          pdf.setFont("helvetica", "normal");
-          pdf.setTextColor(...darkGray);
-          const listingsText = `${host.activeListingsCount} / ${host.listingLimit === 1000 ? "∞" : host.listingLimit}`;
-          pdf.text(listingsText, xPos, yPosition + 7);
-
-          // Start Date
-          xPos += colWidths.listings;
-          const startDateText = formatDate(host.subscriptionStartDate);
-          pdf.text(startDateText, xPos, yPosition + 7);
-
-          yPosition += rowHeight;
-        });
-
-        // Table bottom border
-        pdf.setDrawColor(200, 200, 200);
-        pdf.setLineWidth(0.5);
-        pdf.line(margin, yPosition, margin + tableWidth, yPosition);
-        
-        // Round bottom corners
-        pdf.setDrawColor(220, 220, 220);
-        pdf.setLineWidth(0.3);
-      }
-
-      // Footer with border
-      const totalPages = pdf.internal.getNumberOfPages();
-      for (let i = 1; i <= totalPages; i++) {
-        pdf.setPage(i);
-        
-        // Footer line
-        pdf.setDrawColor(220, 220, 220);
-        pdf.setLineWidth(0.5);
-        pdf.line(margin, pageHeight - 18, pageWidth - margin, pageHeight - 18);
-        
-        pdf.setFontSize(8);
-        pdf.setFont("helvetica", "normal");
-        pdf.setTextColor(...lightGray);
-        
-        // Footer text
-        pdf.text(
-          `Generated on ${new Date().toLocaleDateString('en-US', { 
-            year: 'numeric', 
-            month: 'long', 
-            day: 'numeric'
-          })}`,
-          margin,
-          pageHeight - 12
-        );
-        
-        pdf.text(
-          `Page ${i} of ${totalPages}`,
-          pageWidth - margin,
-          pageHeight - 12,
-          { align: "right" }
-        );
-      }
-
-      // Generate filename
-      let filename = "Subscriptions_Report";
-      if (filter !== "all") {
-        filename += `_${filter}`;
-      }
-      if (planFilter !== "all") {
-        filename += `_${planFilter}`;
-      }
-      filename += `_${new Date().toISOString().split('T')[0]}.pdf`;
-
-      // Save PDF
-      pdf.save(filename);
-      
-      setGeneratingReport(false);
-      alert(`Report generated successfully! ${filteredHosts.length} host(s) included.`);
     } catch (error) {
       console.error("Error generating subscription report:", error);
+      return {
+        title: "Subscription Report",
+        generatedAt: new Date().toLocaleString(),
+        summary: {
+          totalHosts: 0,
+          activeSubscriptions: 0,
+          inactiveSubscriptions: 0,
+          monthlyRevenue: 0,
+          planStats: { starter: { count: 0, active: 0, inactive: 0 }, pro: { count: 0, active: 0, inactive: 0 }, elite: { count: 0, active: 0, inactive: 0 } }
+        },
+        hosts: []
+      };
+    }
+  };
+
+  // Download subscription report as PDF
+  const downloadSubscriptionReport = (report) => {
+    const pdf = new jsPDF();
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    let yPosition = 0;
+    const margin = 20;
+    const lineHeight = 8;
+    const sectionSpacing = 15;
+    
+    // Professional white and blue color scheme (same as financial report)
+    const navyBlue = [0, 51, 102];
+    const royalBlue = [25, 118, 210];
+    const lightBlue = [227, 242, 253];
+    const accentBlue = [13, 71, 161];
+    const textDark = [33, 33, 33];
+    const textMedium = [97, 97, 97];
+    const textLight = [158, 158, 158];
+    const white = [255, 255, 255];
+    const borderGray = [224, 224, 224];
+
+    // Helper function to add header on each page
+    const addHeader = () => {
+      pdf.setFillColor(...white);
+      pdf.rect(0, 0, pageWidth, 60, "F");
+      
+      pdf.setFillColor(...navyBlue);
+      pdf.rect(0, 0, pageWidth, 8, "F");
+      
+      pdf.setTextColor(...navyBlue);
+      pdf.setFontSize(28);
+      pdf.setFont("helvetica", "bold");
+      pdf.text("Voyago", margin, 25);
+      
+      pdf.setFontSize(11);
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...textMedium);
+      pdf.text("Administrative Report", margin, 35);
+      
+      pdf.setDrawColor(...royalBlue);
+      pdf.setLineWidth(1.5);
+      pdf.line(margin, 40, margin + 80, 40);
+      
+      pdf.setFontSize(9);
+      pdf.setTextColor(...textLight);
+      pdf.text("Subscription Report", pageWidth - margin, 25, { align: "right" });
+      pdf.text(`Generated: ${report.generatedAt}`, pageWidth - margin, 35, { align: "right" });
+      
+      pdf.setDrawColor(...borderGray);
+      pdf.setLineWidth(0.5);
+      pdf.line(margin, 55, pageWidth - margin, 55);
+      
+      pdf.setTextColor(...textDark);
+      yPosition = 70;
+    };
+
+    // Helper function to add a new page if needed
+    const checkPageBreak = (requiredSpace = 20) => {
+      if (yPosition + requiredSpace > pageHeight - margin) {
+        pdf.addPage();
+        addHeader();
+        return true;
+      }
+      return false;
+    };
+
+    // Add header to first page
+    addHeader();
+
+    // Report Title
+    pdf.setFontSize(20);
+    pdf.setFont("helvetica", "bold");
+    pdf.setTextColor(...navyBlue);
+    pdf.text(report.title, margin, yPosition);
+    yPosition += sectionSpacing;
+
+    // Executive Summary Section (same style as financial report)
+    checkPageBreak(100);
+    
+    const formatCurrency = (amount) => {
+      const numAmount = parseFloat(amount) || 0;
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      }).format(numAmount);
+    };
+
+    // Calculate summary box height based on content
+    let summaryBoxHeight = 20; // Base height for title
+    summaryBoxHeight += 10; // Title spacing
+    summaryBoxHeight += (lineHeight + 2) * 3; // 3 main lines (Total Hosts, Active, Inactive)
+    summaryBoxHeight += 5; // Divider spacing
+    summaryBoxHeight += (lineHeight + 3); // Monthly Revenue
+    summaryBoxHeight += (lineHeight + 1) * 3; // Plan breakdown (3 lines)
+    summaryBoxHeight += 25; // Info box
+    summaryBoxHeight += 5; // Bottom padding
+    
+    // Draw summary box once with calculated height
+    pdf.setFillColor(...white);
+    pdf.setDrawColor(...borderGray);
+    pdf.setLineWidth(0.5);
+    pdf.roundedRect(margin, yPosition - 8, pageWidth - (margin * 2), summaryBoxHeight, 4, 4, "FD");
+    
+    // Blue accent bar on left side
+    pdf.setFillColor(...royalBlue);
+    pdf.rect(margin, yPosition - 8, 4, summaryBoxHeight, "F");
+    
+    // Section title with blue accent
+    pdf.setFontSize(15);
+    pdf.setFont("helvetica", "bold");
+    pdf.setTextColor(...navyBlue);
+    pdf.text("Executive Summary", margin + 12, yPosition + 3);
+    
+    // Subtle underline
+    pdf.setDrawColor(...royalBlue);
+    pdf.setLineWidth(0.8);
+    pdf.line(margin + 12, yPosition + 5, margin + 100, yPosition + 5);
+    
+    yPosition += 12;
+
+    pdf.setFontSize(10);
+    pdf.setFont("helvetica", "normal");
+
+    // Professional key-value pairs with better spacing and right-aligned values
+    const valueX = pageWidth - margin - 12; // Right-align values
+    
+    pdf.setTextColor(...textDark);
+    pdf.setFont("helvetica", "normal");
+    pdf.text(`Total Hosts:`, margin + 12, yPosition);
+    pdf.setFont("helvetica", "bold");
+    pdf.setTextColor(...royalBlue);
+    pdf.text(report.summary.totalHosts.toString(), valueX, yPosition, { align: "right" });
+    yPosition += lineHeight + 2;
+    
+    pdf.setFont("helvetica", "normal");
+    pdf.setTextColor(...textDark);
+    pdf.text(`Active Subscriptions:`, margin + 12, yPosition);
+    pdf.setTextColor(...textMedium);
+    pdf.text(report.summary.activeSubscriptions.toString(), valueX, yPosition, { align: "right" });
+    yPosition += lineHeight + 2;
+    
+    pdf.setTextColor(...textDark);
+    pdf.text(`Inactive Subscriptions:`, margin + 12, yPosition);
+    pdf.setTextColor(...textMedium);
+    pdf.text(report.summary.inactiveSubscriptions.toString(), valueX, yPosition, { align: "right" });
+    yPosition += lineHeight + 2;
+    
+    // Monthly Revenue highlighted with divider
+    pdf.setDrawColor(...royalBlue);
+    pdf.setLineWidth(0.5);
+    pdf.line(margin + 12, yPosition - 2, pageWidth - margin - 12, yPosition - 2);
+    yPosition += 3;
+    
+    pdf.setFont("helvetica", "bold");
+    pdf.setTextColor(...navyBlue);
+    pdf.text(`Monthly Revenue:`, margin + 12, yPosition);
+    
+    pdf.setTextColor(...royalBlue);
+    pdf.setFontSize(12);
+    pdf.text(formatCurrency(report.summary.monthlyRevenue), valueX, yPosition, { align: "right" });
+    pdf.setFontSize(10);
+    yPosition += lineHeight + 3;
+
+    // Plan breakdown
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(9);
+    pdf.setTextColor(...textMedium);
+    pdf.text(`  • Starter: ${report.summary.planStats.starter.count} (${report.summary.planStats.starter.active} active)`, margin + 12, yPosition);
+    yPosition += lineHeight + 1;
+    pdf.text(`  • Pro: ${report.summary.planStats.pro.count} (${report.summary.planStats.pro.active} active)`, margin + 12, yPosition);
+    yPosition += lineHeight + 1;
+    pdf.text(`  • Elite: ${report.summary.planStats.elite.count} (${report.summary.planStats.elite.active} active)`, margin + 12, yPosition);
+    yPosition += lineHeight + 1;
+    
+    // Metrics info box
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(9);
+    pdf.setTextColor(...textMedium);
+    
+    const infoBoxY = yPosition - 2;
+    const infoBoxHeight = 20;
+    const infoBoxWidth = pageWidth - (margin * 2) - 12;
+    const infoBoxCenterX = margin + 12 + (infoBoxWidth / 2);
+    pdf.setFillColor(...lightBlue);
+    pdf.setDrawColor(...borderGray);
+    pdf.setLineWidth(0.3);
+    pdf.roundedRect(margin + 12, infoBoxY, infoBoxWidth, infoBoxHeight, 2, 2, "FD");
+    
+    pdf.text(`Total Subscriptions: ${report.summary.totalHosts}`, infoBoxCenterX, infoBoxY + 5, { align: "center" });
+    pdf.text(`Active Rate: ${report.summary.totalHosts > 0 ? ((report.summary.activeSubscriptions / report.summary.totalHosts) * 100).toFixed(1) : 0}%`, infoBoxCenterX, infoBoxY + 10, { align: "center" });
+    pdf.text(`Average Monthly Revenue per Active: ${report.summary.activeSubscriptions > 0 ? formatCurrency(report.summary.monthlyRevenue / report.summary.activeSubscriptions) : formatCurrency(0)}`, infoBoxCenterX, infoBoxY + 15, { align: "center" });
+    
+    yPosition += infoBoxHeight + 3;
+    pdf.setFontSize(10);
+    yPosition += sectionSpacing + 10;
+
+    // Hosts Table
+    if (report.hosts && report.hosts.length > 0) {
+      checkPageBreak(50);
+      
+      // Section title
+      pdf.setFontSize(16);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...navyBlue);
+      pdf.text("Host Subscriptions", margin, yPosition);
+      yPosition += 15;
+
+      pdf.setFontSize(9);
+      pdf.setFont("helvetica", "normal");
+      
+      // Define column positions for better spacing (similar to financial report)
+      const colHost = margin + 6;
+      const colPlan = margin + 50;
+      const colStatus = margin + 75;
+      const colListingDate = pageWidth - margin - 50;
+      
+      // Professional table header with navy blue background
+      pdf.setFillColor(...navyBlue);
+      pdf.roundedRect(margin, yPosition - 7, pageWidth - (margin * 2), 12, 3, 3, "F");
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...white);
+      pdf.setFontSize(9);
+      pdf.text("Host", colHost, yPosition);
+      pdf.text("Plan", colPlan, yPosition);
+      pdf.text("Status", colStatus, yPosition);
+      pdf.text("Listing Date", colListingDate, yPosition, { align: "right" });
+      yPosition += 14;
+      pdf.setFont("helvetica", "normal");
+
+      const formatDate = (date) => {
+        if (!date) return "N/A";
+        try {
+          let dateObj;
+          if (date instanceof Date) {
+            dateObj = date;
+          } else if (date.toDate && typeof date.toDate === 'function') {
+            dateObj = date.toDate();
+          } else {
+            dateObj = new Date(date);
+          }
+          
+          if (isNaN(dateObj.getTime())) return "N/A";
+          
+          return dateObj.toLocaleDateString('en-US', { 
+            month: 'short', 
+            day: 'numeric', 
+            year: 'numeric' 
+          });
+        } catch (error) {
+          return "N/A";
+        }
+      };
+
+      // Limit to first 100 hosts to avoid PDF being too long
+      const hostsToShow = report.hosts.slice(0, 100);
+      hostsToShow.forEach((host, index) => {
+        checkPageBreak(12);
+        
+        // White background with subtle border for each row
+        pdf.setFillColor(...white);
+        pdf.setDrawColor(...borderGray);
+        pdf.setLineWidth(0.3);
+        pdf.roundedRect(margin, yPosition - 6, pageWidth - (margin * 2), lineHeight + 3, 2, 2, "FD");
+        
+        // Light blue background for alternate rows
+        if (index % 2 === 0) {
+          pdf.setFillColor(...lightBlue);
+          pdf.roundedRect(margin, yPosition - 6, pageWidth - (margin * 2), lineHeight + 3, 2, 2, "F");
+        }
+        
+        // Host name (truncate to fit available space)
+        const name = (host.name || "N/A");
+        const maxChars = 20;
+        const truncatedName = name.length > maxChars 
+          ? name.substring(0, maxChars - 3) + "..." 
+          : name;
+        pdf.setTextColor(...textDark);
+        pdf.setFontSize(8);
+        pdf.text(truncatedName, colHost, yPosition);
+        
+        // Plan with color coding
+        const plan = host.plan.charAt(0).toUpperCase() + host.plan.slice(1);
+        pdf.setTextColor(...textMedium);
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(8);
+        pdf.text(plan, colPlan, yPosition);
+        
+        // Status with color coding
+        const status = host.status.charAt(0).toUpperCase() + host.status.slice(1);
+        const statusColor = host.status === "active" ? royalBlue : textMedium;
+        pdf.setTextColor(...statusColor);
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(8);
+        pdf.text(status, colStatus, yPosition);
+        pdf.setFont("helvetica", "normal");
+        
+        // Listing Date - just the date
+        const dateText = formatDate(host.startDate);
+        pdf.setTextColor(...textMedium);
+        pdf.setFontSize(7);
+        pdf.text(dateText, colListingDate, yPosition, { align: "right" });
+        
+        yPosition += lineHeight + 4;
+      });
+
+      if (report.hosts.length > 100) {
+        yPosition += 5;
+        pdf.setFontSize(8);
+        pdf.setTextColor(...textLight);
+        pdf.text(`(Showing first 100 of ${report.hosts.length} hosts)`, margin, yPosition);
+        pdf.setTextColor(...textDark);
+        pdf.setFontSize(9);
+      }
+    }
+
+    // Professional footer on each page with branding
+    const pageCount = pdf.internal.pages.length - 1;
+    for (let i = 1; i <= pageCount; i++) {
+      pdf.setPage(i);
+      
+      // Subtle blue accent line at footer
+      pdf.setDrawColor(...royalBlue);
+      pdf.setLineWidth(0.8);
+      pdf.line(margin, pageHeight - 30, pageWidth - margin, pageHeight - 30);
+      
+      // Footer background with light blue tint
+      pdf.setFillColor(...lightBlue);
+      pdf.rect(0, pageHeight - 28, pageWidth, 28, "F");
+      
+      // Footer text with professional styling
+      pdf.setFontSize(8);
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...textMedium);
+      pdf.text(
+        `Voyago Administrative Report`,
+        margin,
+        pageHeight - 18,
+        { align: "left" }
+      );
+      
+      pdf.setTextColor(...navyBlue);
+      pdf.setFont("helvetica", "bold");
+      pdf.text(
+        `Page ${i} of ${pageCount}`,
+        pageWidth - margin,
+        pageHeight - 18,
+        { align: "right" }
+      );
+      
+      // Generated date in footer
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...textLight);
+      pdf.text(
+        `Generated: ${report.generatedAt}`,
+        pageWidth / 2,
+        pageHeight - 18,
+        { align: "center" }
+      );
+      
+      // Confidentiality notice
+      pdf.setFontSize(7);
+      pdf.setTextColor(...textLight);
+      pdf.text(
+        `Confidential - For Internal Use Only`,
+        pageWidth / 2,
+        pageHeight - 10,
+        { align: "center" }
+      );
+    }
+
+    // Save the PDF
+    const fileName = `Subscription_Report_${new Date().toISOString().split("T")[0]}.pdf`;
+    pdf.save(fileName);
+  };
+
+  // Handle generate report button click
+  const handleGenerateSubscriptionReport = async () => {
+    try {
+      setGeneratingReport(true);
+      const report = generateSubscriptionReport();
+      downloadSubscriptionReport(report);
+      alert("Subscription report generated and downloaded successfully!");
+    } catch (error) {
+      console.error("Error generating subscription report:", error);
+      alert("Failed to generate subscription report. Please try again.");
+    } finally {
       setGeneratingReport(false);
-      alert("Failed to generate report. Please try again.");
     }
   };
 

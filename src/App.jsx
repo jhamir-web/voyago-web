@@ -20,6 +20,7 @@ import HostHomePage from "./pages/host/HostHomePage";
 import SelectListingType from "./pages/host/SelectListingType";
 import EditListing from "./pages/host/EditListing";
 import VerifyEmail from "./pages/VerifyEmail";
+import Policy from "./pages/Policy";
 
 function App() {
   return (
@@ -47,6 +48,7 @@ function App() {
         <Route path="/chat/:bookingId" element={<Chat />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/favorites" element={<Favorites />} />
+        <Route path="/policy" element={<Policy />} />
         <Route path="/admin/setup" element={<AdminSetup />} />
         <Route path="/admin" element={<AdminDashboard />} />
         <Route path="/admin/*" element={<AdminDashboard />} />

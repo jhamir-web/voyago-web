@@ -23,6 +23,8 @@ const Profile = () => {
   });
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState("");
+  const [editedFirstName, setEditedFirstName] = useState("");
+  const [editedLastName, setEditedLastName] = useState("");
   const [isEditingPhone, setIsEditingPhone] = useState(false);
   const [editedPhone, setEditedPhone] = useState("");
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
@@ -43,11 +45,19 @@ const Profile = () => {
         if (userDoc.exists()) {
           const data = userDoc.data();
           setUserData(data);
-          setEditedName(data.displayName || currentUser.displayName || currentUser.email?.split('@')[0] || 'User');
+          // Set display name (full name)
+          const displayName = data.displayName || currentUser.displayName || currentUser.email?.split('@')[0] || 'User';
+          setEditedName(displayName);
+          // Set first and last name separately
+          setEditedFirstName(data.firstName || "");
+          setEditedLastName(data.lastName || "");
           setEditedPhone(data.phoneNumber || data.phone || '');
           setProfilePhotoUrl(data.photoURL || data.profilePhotoUrl || currentUser.photoURL || null);
         } else {
-          setEditedName(currentUser.displayName || currentUser.email?.split('@')[0] || 'User');
+          const displayName = currentUser.displayName || currentUser.email?.split('@')[0] || 'User';
+          setEditedName(displayName);
+          setEditedFirstName("");
+          setEditedLastName("");
           setEditedPhone('');
           setProfilePhotoUrl(currentUser.photoURL || null);
         }
@@ -147,21 +157,32 @@ const Profile = () => {
   }
 
   const handleSaveName = async () => {
-    if (!editedName.trim()) {
-      alert("Name cannot be empty");
+    // Validate that both first and last name are provided
+    const firstName = editedFirstName.trim();
+    const lastName = editedLastName.trim();
+    
+    if (!firstName || !lastName) {
+      alert("Please provide both first and last name");
       return;
     }
 
     try {
-      // Update Firebase Auth profile
+      // Combine first and last name for display name
+      const finalDisplayName = `${firstName} ${lastName}`;
+      const finalName = finalDisplayName;
+
+      // Update Firebase Auth profile with display name
       await updateProfile(auth.currentUser, {
-        displayName: editedName.trim()
+        displayName: finalDisplayName
       });
 
-      // Update Firestore user document
+      // Update Firestore user document with all name fields
       const userRef = doc(db, "users", currentUser.uid);
       await updateDoc(userRef, {
-        displayName: editedName.trim(),
+        displayName: finalDisplayName,
+        name: finalName,
+        firstName: firstName,
+        lastName: lastName,
         updatedAt: new Date().toISOString()
       });
 
@@ -169,7 +190,12 @@ const Profile = () => {
       // Refresh user data
       const userDoc = await getDoc(userRef);
       if (userDoc.exists()) {
-        setUserData(userDoc.data());
+        const updatedData = userDoc.data();
+        setUserData(updatedData);
+        // Update local state with the saved values
+        setEditedName(finalDisplayName);
+        setEditedFirstName(firstName);
+        setEditedLastName(lastName);
       }
     } catch (error) {
       console.error("Error updating name:", error);
@@ -274,11 +300,23 @@ const Profile = () => {
     }
   };
 
+  // Get the display name - prioritize Firestore displayName, then combine firstName + lastName, then fallback
+  const getDisplayName = () => {
+    if (userData?.displayName) return userData.displayName;
+    if (userData?.firstName && userData?.lastName) {
+      return `${userData.firstName} ${userData.lastName}`;
+    }
+    if (userData?.name) return userData.name;
+    if (currentUser?.displayName) return currentUser.displayName;
+    if (currentUser?.email) return currentUser.email.split('@')[0];
+    return 'User';
+  };
+
+  const displayName = getDisplayName();
   const userInitials = profilePhotoUrl 
     ? '' 
-    : (editedName || currentUser?.displayName || currentUser?.email || 'U')[0].toUpperCase() + 
-      (editedName || currentUser?.displayName || currentUser?.email || 'U')[1]?.toUpperCase() || '';
-  const userName = editedName || currentUser?.displayName || currentUser?.email?.split('@')[0] || 'User';
+    : displayName[0].toUpperCase() + (displayName[1]?.toUpperCase() || '');
+  const userName = displayName;
   const userEmail = currentUser?.email || '';
   const createdAt = userData?.createdAt || currentUser?.metadata?.creationTime || '';
 
@@ -344,29 +382,61 @@ const Profile = () => {
               {/* User Info */}
               <div className="flex-1 w-full">
                 {isEditingName ? (
-                  <div className="flex flex-wrap items-center gap-3 mb-4">
-                    <input
-                      type="text"
-                      value={editedName}
-                      onChange={(e) => setEditedName(e.target.value)}
-                      className="text-xl sm:text-2xl lg:text-3xl font-semibold text-[#1C1C1E] border-2 border-[#0071E3] rounded-xl px-5 py-3 focus:outline-none focus:ring-2 focus:ring-[#0071E3]/20 flex-1 min-w-[200px] max-w-md"
-                      autoFocus
-                    />
-                    <button
-                      onClick={handleSaveName}
-                      className="px-5 py-3 bg-[#0071E3] text-white rounded-xl text-sm font-semibold hover:bg-[#0051D0] transition-all shadow-md hover:shadow-lg"
-                    >
-                      Save
-                    </button>
-                    <button
-                      onClick={() => {
-                        setIsEditingName(false);
-                        setEditedName(userName);
-                      }}
-                      className="px-5 py-3 bg-gray-100 text-[#1C1C1E] rounded-xl text-sm font-semibold hover:bg-gray-200 transition-all"
-                    >
-                      Cancel
-                    </button>
+                  <div className="space-y-4 mb-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs sm:text-sm font-medium text-[#8E8E93] mb-1.5">
+                          First Name
+                        </label>
+                        <input
+                          type="text"
+                          value={editedFirstName}
+                          onChange={(e) => setEditedFirstName(e.target.value)}
+                          placeholder="First Name"
+                          className="w-full text-base sm:text-lg font-medium text-[#1C1C1E] border-2 border-[#0071E3] rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#0071E3]/20"
+                          autoFocus
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs sm:text-sm font-medium text-[#8E8E93] mb-1.5">
+                          Last Name
+                        </label>
+                        <input
+                          type="text"
+                          value={editedLastName}
+                          onChange={(e) => setEditedLastName(e.target.value)}
+                          placeholder="Last Name"
+                          className="w-full text-base sm:text-lg font-medium text-[#1C1C1E] border-2 border-[#0071E3] rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#0071E3]/20"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={handleSaveName}
+                        className="px-5 py-3 bg-[#0071E3] text-white rounded-xl text-sm font-semibold hover:bg-[#0051D0] transition-all shadow-md hover:shadow-lg"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => {
+                          setIsEditingName(false);
+                          // Reset to original values from Firestore
+                          setEditedFirstName(userData?.firstName || "");
+                          setEditedLastName(userData?.lastName || "");
+                          // Reset editedName to the current display name
+                          const currentDisplayName = userData?.displayName || 
+                            (userData?.firstName && userData?.lastName ? `${userData.firstName} ${userData.lastName}` : '') ||
+                            userData?.name || 
+                            currentUser?.displayName || 
+                            currentUser?.email?.split('@')[0] || 
+                            'User';
+                          setEditedName(currentDisplayName);
+                        }}
+                        className="px-5 py-3 bg-gray-100 text-[#1C1C1E] rounded-xl text-sm font-semibold hover:bg-gray-200 transition-all"
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="flex items-center gap-3 mb-3">

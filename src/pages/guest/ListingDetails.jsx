@@ -624,6 +624,11 @@ const ListingDetails = () => {
 
   // Validate booking dates and check for conflicts
   const validateBooking = async () => {
+    // Check if user is trying to book their own listing
+    if (currentUser && listing && listing.hostId === currentUser.uid) {
+      return { valid: false, error: "You cannot book your own listing. Please select a different property." };
+    }
+
     if (!checkIn || !checkOut) {
       return { valid: false, error: "Please select both check-in and check-out dates." };
     }
@@ -1857,11 +1862,17 @@ const ListingDetails = () => {
 
                   <button
                     type="submit"
-                    disabled={!checkIn || !checkOut || totalPrice === 0 || !listing?.price}
+                    disabled={!checkIn || !checkOut || totalPrice === 0 || !listing?.price || (currentUser && listing && listing.hostId === currentUser.uid)}
                       className="w-full bg-[#0071E3] text-white px-6 py-3.5 rounded-lg text-base font-semibold hover:bg-[#0051D0] transition-all shadow-lg hover:shadow-xl disabled:bg-gray-300 disabled:cursor-not-allowed disabled:shadow-none"
                   >
                     Reserve
                   </button>
+                  
+                  {currentUser && listing && listing.hostId === currentUser.uid && (
+                    <p className="text-xs text-center text-red-600 mt-2">
+                      You cannot book your own listing.
+                    </p>
+                  )}
 
                     <p className="text-xs text-center text-gray-500">
                     You won't be charged yet

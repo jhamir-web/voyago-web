@@ -20,12 +20,66 @@ export default async function handler(req, res) {
 
   // For all other requests, set CORS headers first
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-api-key, Authorization');
 
-  // Only allow POST requests
-  if (method !== 'POST') {
+  // Allow POST and GET requests
+  if (method !== 'POST' && method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  // Handle GET request for checking payout status
+  if (method === 'GET') {
+    const { batchId } = req.query;
+    
+    if (!batchId) {
+      return res.status(400).json({ error: 'Missing batchId parameter' });
+    }
+
+    try {
+      // Import PayPal SDK dynamically
+      const payoutsSdk = await import('@paypal/payouts-sdk');
+      
+      // PayPal Configuration from environment variables
+      const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID || 'ASEGKmY1EZ2TiV4AJdCqlBsoKQVcKBYBPsloT6k7P1LdpKKrLcV3qQtXMrKySCWPnh7TxU10mW8HUh84';
+      const PAYPAL_SECRET = process.env.PAYPAL_SECRET || '';
+      const PAYPAL_MODE = process.env.PAYPAL_MODE || 'sandbox';
+
+      // Validate PayPal credentials
+      if (!PAYPAL_SECRET) {
+        return res.status(500).json({
+          error: 'PayPal Secret is not configured'
+        });
+      }
+
+      // Initialize PayPal Environment
+      const environment = PAYPAL_MODE === 'live'
+        ? new payoutsSdk.core.LiveEnvironment(PAYPAL_CLIENT_ID, PAYPAL_SECRET)
+        : new payoutsSdk.core.SandboxEnvironment(PAYPAL_CLIENT_ID, PAYPAL_SECRET);
+
+      const client = new payoutsSdk.core.PayPalHttpClient(environment);
+
+      // Get payout batch status
+      const getRequest = new payoutsSdk.payouts.PayoutsGetRequest(batchId);
+      const response = await client.execute(getRequest);
+      
+      const batchStatus = response.result?.batch_header?.batch_status;
+      const payoutStatus = response.result?.items?.[0]?.transaction_status;
+
+      return res.status(200).json({
+        success: true,
+        batchId: batchId,
+        batchStatus: batchStatus,
+        payoutStatus: payoutStatus,
+        result: response.result
+      });
+    } catch (error) {
+      console.error('[ERROR] Check Payout Status Error:', error.message);
+      return res.status(500).json({
+        error: `Failed to check payout status: ${error.message}`,
+        details: error.message,
+      });
+    }
   }
 
   // NOW check API key (OPTIONS already returned above, so this won't run for OPTIONS)
